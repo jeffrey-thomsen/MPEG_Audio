@@ -182,11 +182,9 @@ def assignBits(subbandFrame):
     
     nAvailableBits = nTotalBits - (nHeaderBits + nCrcBits + nBitAllocBits + nAncBits) # bits available for coding samples and scalefactors
 
-    nBitsSubband=[]
-    for iC in range(32):
-        nBitsSubband.append(0)
+    nBitsSubband=np.zeros(32,dtype=int)
     
-    while nAvailableBits > possibleIncreaseInBits(nBitsSubband):
+    while (nAvailableBits >= possibleIncreaseInBits(nBitsSubband)) & (np.where(nBitsSubband < 15)[0].size > 0):
         
         minSubBand = determineMinimalMNR(nBitsSubband)
         nBitsSubband = increaseNBits(nBitsSubband,minSubBand)
@@ -215,7 +213,8 @@ def determineMinimalMNR(nBitsSubband):
 def increaseNBits(nBitsSubband,minSubBand):    
     
     currentNBits = nBitsSubband[minSubBand]
-    if (currentNBits>0 & currentNBits<15):
+    assert (currentNBits<16),"Too many bits assigned!"
+    if (currentNBits>0) & (currentNBits<15):
         nBitsSubband[minSubBand] += 1
     elif (currentNBits==0):
         nBitsSubband[minSubBand] += 2
@@ -233,6 +232,7 @@ def updateMNR(nBitsSubband):
     nBands = 32
     
     for iBand in range(nBands):
+        assert (nBitsSubband[iBand]<16),"Too many bits assigned!"
         snrIndex = np.where(snrTable[:,0] == nBitsSubband[iBand])[0][0]
         SNR[iBand] = snrTable[snrIndex,2]
         SMR = 0 # eventually determine this from psychoacoustic model
@@ -283,32 +283,32 @@ def possibleIncreaseInBits(nBitsSubband):
 
 
 # multiply subband frame by scalefactors and quantize them with the number of bits
-def quantizeSubbandFrame(subbandFrame,scaleFactor,nBitsSubband):
+def quantizeSubbandFrame(subbandFrame,scaleFactorVal,nBitsSubband):
     
-    transmitScalefactor = []
+    transmitScalefactorVal = []
     transmitSubband = []
     transmitNSubbands = []
     
     for iBand in range(32):
         if nBitsSubband[iBand]>0:
             transmitNSubbands.append(iBand)
-            transmitScalefactor.append(scaleFactor[iBand])
+            transmitScalefactorVal.append(scaleFactorVal[iBand])
             
-            normalizedBand = subbandFrame.frame[iBand,:]*scaleFactor[iBand]
+            normalizedBand = subbandFrame.frame[iBand,:]/scaleFactorVal[iBand]
             quantizedBand = subbandQuantizer(normalizedBand,nBitsSubband[iBand])
             
-            transmitSubband.append(codeSubband(quantizedBand,nBitsSubband[iBand]))
+            #transmitSubband.append(codeSubband(quantizedBand,nBitsSubband[iBand]))
+            transmitSubband.append(quantizedBand)
             
-            return transmitSubband
+    return transmitNSubbands, transmitScalefactorVal, transmitSubband
 
 
 # Quantizer defined by MPEG
 def subbandQuantizer(normalizedBand,nBits):
     
-    nSteps = int(2**nBits-1)
+    #nSteps = int(2**nBits-1)
     indBits = int(nBits-2)
-    print(type(indBits))
-    nSteps = np.load('data/mpeg_qc_layer_i_nSteps.npy')
+    #nSteps = np.load('data/mpeg_qc_layer_i_nSteps.npy')
     A = np.load('data/mpeg_qc_layer_i_A.npy')
     B = np.load('data/mpeg_qc_layer_i_B.npy')
     
@@ -317,25 +317,23 @@ def subbandQuantizer(normalizedBand,nBits):
     return quantizedBand
 
 # convert scale factor indices into binary representation for coding
-def codeSubband(quantizedBand,nBits):
-    assert (type(scaleFactorIndex[0]==int)),"Input not integer value!"
+# NOTE: right now no conversion to binary yet
+# def codeSubband(quantizedBand,nBits):
+#     assert (type(quantizedBand[0]==int)),"Input not integer value!"
     
-    codedSubband = []
-    for iSample in range(len(quantizedBand)):
-        print(quantizedBand[iSample])
-        codedVal    = bin(quantizedBand[iSample]) # this should be an integer number but isn't???
-        codedVal    = codedVal[0:nBits]
-        codedVal[0] = ~codedVal[0]
-        codedSubband.append()
+#     codedSubband = []
+#     for iSample in range(len(quantizedBand)):
+#         print(quantizedBand[iSample])
+#         codedVal    = bin(quantizedBand[iSample]) # this should be an integer number but isn't???
+#         codedVal    = codedVal[0:nBits]
+#         codedVal[0] = ~codedVal[0]
+#         codedSubband.append()
     
-    return codedScaleFactor
+#     return codedScaleFactor
 
 #%% Miscellaneous
 
 # Convert right-left stereo array to mid-side coded array
-
-
-
 def convRLtoMS(RLsig):
     
     nSamples,stereo=RLsig.shape

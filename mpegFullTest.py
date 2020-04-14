@@ -36,12 +36,20 @@ scaleFactorVal, scaleFactorInd = mpeg.calcScaleFactors(subFrame)
 # right now no conversion to binary yet
 #mpeg.codeScaleFactor(scaleFactorIndex)
 
-#%% bit allocation for current frame
+#%% bit allocation for one frame
 
 nBitsSubband, bscf, bspl, adb = mpeg.assignBits(subFrame)
 
+#%% quantize subband samples of one frame
 
-# In[14]:
-# simple test for quantizer
+transmitNSubbands, transmitScalefactorVal, transmitSubband = mpeg.quantizeSubbandFrame(subFrame,scaleFactorVal,nBitsSubband)
 
-#mpeg.quantizeSubbandFrame(subFrame,scaleFactorVal,nBitsSubband)
+#%% reveal error of quantization
+import numpy as np
+decodedSubband = np.zeros((32,12))
+for i in range(32):
+    decodedSubband[i,:]=transmitSubband[i]*transmitScalefactorVal[i]
+    
+decErr=decodedSubband/subFrame.frame
+
+print(np.mean(decErr))
