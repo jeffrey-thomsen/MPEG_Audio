@@ -17,7 +17,7 @@ import scipy.io.wavfile as wav
 #%% load audio
 filename = 'data/audio/watermelonman_audio.wav'
 sampleRate, x=wav.read(filename)
-
+x = x[20000:,:]
 
 #%% calculate polyphase filterbank output
 
@@ -27,29 +27,41 @@ subSamples = mpeg.feedCoder(x)
 
 subFrame = mpeg.subbandFrame()
 
-subSamples = subFrame.pushFrame(subSamples)
-
-#%% calculate scalefactors for current frame
-
-scaleFactorVal, scaleFactorInd = mpeg.calcScaleFactors(subFrame)
-
-# right now no conversion to binary yet
-#mpeg.codeScaleFactor(scaleFactorIndex)
-
-#%% bit allocation for one frame
-
-nBitsSubband, bscf, bspl, adb = mpeg.assignBits(subFrame)
-
-#%% quantize subband samples of one frame
-
-transmitNSubbands, transmitScalefactorVal, transmitSubband = mpeg.quantizeSubbandFrame(subFrame,scaleFactorVal,nBitsSubband)
-
-#%% reveal error of quantization
-import numpy as np
-decodedSubband = np.zeros((32,12))
-for i in range(32):
-    decodedSubband[i,:]=transmitSubband[i]*transmitScalefactorVal[i]
+transmitFrames=[]
+while len(subSamples)>=12:
+    subSamples = subFrame.pushFrame(subSamples)
     
-decErr=decodedSubband/subFrame.frame
+    #calculate scalefactors for current frame
+    scaleFactorVal, scaleFactorInd = mpeg.calcScaleFactors(subFrame)
+    
+    # right now no conversion to binary yet
+    #mpeg.codeScaleFactor(scaleFactorIndex)
+    
+    #bit allocation for one frame
+    nBitsSubband, bscf, bspl, adb = mpeg.assignBits(subFrame)
+    
+    #quantize subband samples of one frame
+    transmit = mpeg.quantizeSubbandFrame(subFrame,scaleFactorVal,nBitsSubband)
+    transmitFrames.append(transmit)
 
-print(np.mean(decErr))
+#%% Decoding
+
+decodedSignal = mpeg.decoder(transmitFrames)
+#%%
+import matplotlib.pyplot as plt
+
+plt.figure()
+plt.plot(x[0:32768,0])
+plt.plot(decodedSignal[480:])
+
+plt.figure()
+plt.plot(x[0:32160,0]-decodedSignal[480:])
+#%% reveal error of quantization
+# import numpy as np
+# decodedSubband = np.zeros((32,12))
+# for i in range(32):
+#     decodedSubband[i,:]=transmitSubband[i]*transmitScalefactorVal[i]
+    
+# decErr=decodedSubband/subFrame.frame
+
+# print(np.mean(decErr))

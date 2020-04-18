@@ -1,7 +1,7 @@
 # this script is used to generate a numpy array containing the reference scalefactors for Layer I and II audio coding as defined in Table B.1 of the ISO/IEC 11172-3 (aka MPEG-1 Audio) standard
 
 import numpy
-scaleFactorTable = numpy.zeros(64)
+scaleFactorTable = numpy.zeros(63)
 
 scaleFactorTable[0]  = 2.00000000000000
 scaleFactorTable[1]  = 1.58740105196820

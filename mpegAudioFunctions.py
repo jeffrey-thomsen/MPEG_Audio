@@ -16,7 +16,14 @@ import numpy as np
         
 
 
-#%% Implementation of the Polyphase filterbank
+#%% Implementation of the Analysis Polyphase filterbank
+"""
+The Analysis Filterbank uses a buffer which is fed with blocks of input audio
+signal (analysisBuffer object). For each block of 32 audio samples pushed into
+ the buffer, the polyphase filterbank calculates one subband sample in 32 
+subbands
+"""
+
 
 # object containing 512 samples of audio to be fed to the Polyphase Filterbank
 class analysisBuffer:
@@ -36,10 +43,7 @@ def polyphaseFilterbank(x):
     assert (type(x)==analysisBuffer),"Input not an analysisBuffer object!"
     
     C = np.load('data/mpeg_analysis_window.npy') # analysis window defined by MPEG
-
-    assert (len(C)==512),"Window length not 512!"
-
-    M = np.load('data/mpeg_polyphase_analysis_matrix_coeff.npy')
+    M = np.load('data/mpeg_polyphase_analysis_matrix_coeff.npy')  # analysis matrix coefficients defined by MPEG
 
     subbandSamples = np.zeros(32)
     for n in range(32): # this nested for-loop structure takes all the time! How to speed up?
@@ -48,22 +52,11 @@ def polyphaseFilterbank(x):
                 subbandSamples[n] = subbandSamples[n] + (M[n,k] * (C[k+64*m]*x.bufferVal[k+64*m]))
         
     return subbandSamples
-
-
-# part of the Polyphase Filterbank
-# this function was originally used to calculate the matrix every time,
-# but now it is simply loaded from an .npy array
-
-# def calcAnalysisMatrixCoeff():
-#     M = np.zeros([32,64])
-#     for n in range(32):
-#         for k in range(64):
-#             M[n,k] = np.cos((2*n+1)*(k-16)*np.pi/64)
-            
-#     return M
      
-#%% Routine that takes blocks of audio and feeds it to the buffer, 
-#   then groups subband samples into frames
+#%% 
+"""
+Routine that takes blocks of audio and feeds it to the buffer
+"""
 
 # takes raw audio signal, runs it into the analysisBuffer and calculates the 
 # filterbank outputs subbandSamples
@@ -96,7 +89,7 @@ def feedCoder(x):
     iSample = 0
     subbandSamples = []
     
-    while iSample+32<=4096:#32768: # eventually needs to be nSamples, but right now it's too slow
+    while iSample+32<=32768: # eventually needs to be nSamples, but right now it's too slow
         xBuffer.pushBlock(x[iSample:iSample+32])
         subbandSamples.append((polyphaseFilterbank(xBuffer)))
         iBlock  += 1
@@ -105,7 +98,7 @@ def feedCoder(x):
     return subbandSamples
 
 
-#%% 
+#%% subbandFrame object
 
 # object containing a frame of 12 or 36 subband sample outputs of the polyphase filterbank, must be initialized empty first
 class subbandFrame:
@@ -128,7 +121,11 @@ class subbandFrame:
 
 
 #%% Scalefactor Calculation
-
+"""
+The scalefactor calculation takes a subbandFrame object, compares the max abs 
+values of each subband to the scalefactor table and assigns the fitting scale 
+factors to the subbands
+"""
 # compare max abs values of each subband frame to scalefactor table and deduct
 # fitting scale factor
 def calcScaleFactors(subbandFrame):
@@ -141,7 +138,7 @@ def calcScaleFactors(subbandFrame):
     
     scaleFactorTable = np.load('data/mpeg_scale_factors.npy') # scale factors defined by MPEG
     scaleFactorTable = np.flip(scaleFactorTable)
-    assert (len(scaleFactorTable)==64),"Table length not 64!"
+    assert (len(scaleFactorTable)==63),"Table length not 64!"
     
     scaleFactor = np.zeros(32)
     scaleFactorIndex = []
@@ -166,6 +163,12 @@ def codeScaleFactors(scaleFactorIndex):
 
 
 #%% Bit allocation
+"""
+The bit allocation actually takes into account the output of the psychoacoustic
+model, but that's not implemented yet.
+Now, it takes a subbandFrame object, and through an iterative process it 
+assigns a number of coding bits to each subband
+"""
 
 # main function for bit allocation that calculates the number of bits to be
 # assigned to each subband of a frame of subband samples
@@ -281,6 +284,25 @@ def possibleIncreaseInBits(nBitsSubband):
 
 #%% Quantizer
 
+"""
+The quantizer takes a subbandFrame object, its corresponding scalefactors and 
+bit assignments, divides each sample in the frame with the corresponding 
+scalefactor of the band and applies the quantization according to the number of
+ bits allocated to each band. The quantized subband samples are then wrapped 
+in a transmiSubband object together with the other input data, quasi 
+representing a block of the formatted bitstream.
+
+"""
+
+#
+class transmitFrame:
+    def __init__(self,nSubbands=None,nBitsSubband=None,scalefactorVal=None,quantSubbandSamples=None):
+        assert (len(nSubbands)==len(scalefactorVal)==len(quantSubbandSamples)), "Length of input lists not consistent!"
+        self.nSubbands = nSubbands
+        self.nBitsSubband = nBitsSubband
+        self.scalefactorVal = scalefactorVal
+        self.quantSubbandSamples = quantSubbandSamples
+        
 
 # multiply subband frame by scalefactors and quantize them with the number of bits
 def quantizeSubbandFrame(subbandFrame,scaleFactorVal,nBitsSubband):
@@ -300,7 +322,10 @@ def quantizeSubbandFrame(subbandFrame,scaleFactorVal,nBitsSubband):
             #transmitSubband.append(codeSubband(quantizedBand,nBitsSubband[iBand]))
             transmitSubband.append(quantizedBand)
             
-    return transmitNSubbands, transmitScalefactorVal, transmitSubband
+    
+    transmit=transmitFrame(transmitNSubbands,nBitsSubband,transmitScalefactorVal,transmitSubband)
+            
+    return transmit
 
 
 # Quantizer defined by MPEG
@@ -330,6 +355,90 @@ def subbandQuantizer(normalizedBand,nBits):
 #         codedSubband.append()
     
 #     return codedScaleFactor
+
+
+#%% Decoder
+
+"""
+The decoder takes each transmitFrame object and multiplies the quantized
+subband values with the corresponding scale factors and then runs the resulting
+stream of subband-separated samples into the synthesis filterbank to
+reconstruct a single audio time signal
+
+Refer to flowcharts A.1 and A.2 in the MPEG-1 Part 3 standard
+"""
+
+# object containing 1024 samples to be fed to the Synthesis Filterbank
+class synthesisBuffer:
+    def __init__(self,bufferVal=np.zeros(1024)):
+        assert (len(bufferVal)==1024),"Input not length 1024!"
+        self.bufferVal = bufferVal
+    
+    # by definition, 1 subband sample with 32 bands is pushed into the buffer at a time
+    def pushBlock(self,decodedBands):
+        
+        self.bufferVal[64:] = self.bufferVal[:-64]
+        self.bufferVal[0:64] = synthesisMatrixing(decodedBands[0,:])
+        decodedBands = decodedBands[1:,:]   
+        return decodedBands
+
+# part of the synthesis filter process
+def synthesisMatrixing(sampleBlock):
+    N = np.load('data/mpeg_polyphase_synthesis_matrix_coeff.npy')
+    V = np.zeros(64)
+    for n in range(64):
+        for k in range(32):
+            V[n] = V[n] + (N[n,k]*sampleBlock[k])
+            
+    return V
+    
+# analysis filterbank for MPEG Audio subband coding
+def synthesisFilterbank(x):
+    # x - synthesisBuffer object
+    assert (type(x)==synthesisBuffer),"Input not a synthesisBuffer object!"
+    
+
+    U = np.zeros(512)
+    for n in range(8):
+        for m in range(32):
+                U[n*64+m]    = x.bufferVal[n*128+m]
+                U[n*64+32+m] = x.bufferVal[n*128+96+m]
+    
+    D = np.load('data/mpeg_synthesis_window.npy') # synthesis window defined by MPEG
+    
+    W = U*D
+    
+    S = np.zeros(32)
+    for m in range(32):
+        for n in range(16):
+            S[m] = S[m] + W[m+32*n]
+        
+    return S
+    
+
+def decoder(transmitFrames):
+    
+    nFrames = len(transmitFrames)
+    
+    decodedBands = np.zeros((nFrames*12,32))
+    
+    for iFrame in range(nFrames):
+        for iBand in range(32):
+                decodedBands[iFrame*12:(iFrame+1)*12,iBand] = transmitFrames[iFrame].quantSubbandSamples[iBand]*transmitFrames[iFrame].scalefactorVal[iBand]
+    
+    
+    synBuff = synthesisBuffer()
+    decodedSignal=[]
+    
+    while decodedBands[:,0].size>0:
+        decodedBands = synBuff.pushBlock(decodedBands)
+        decodedSignal+= list(synthesisFilterbank(synBuff))
+    decodedSignal = np.array(decodedSignal)
+    
+    return decodedSignal
+
+
+
 
 #%% Miscellaneous
 
