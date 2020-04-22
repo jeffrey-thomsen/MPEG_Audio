@@ -17,7 +17,9 @@ import scipy.io.wavfile as wav
 #%% load audio
 filename = 'data/audio/watermelonman_audio.wav'
 sampleRate, x=wav.read(filename)
-x = x[20000:,:]
+#x = x[20000:,:]
+x = x[3400000:,:]
+x = x/32768 # normalize values between -1 and 1, I suppose that's the values the coder wants to work with
 
 #%% calculate polyphase filterbank output
 
@@ -41,7 +43,7 @@ while len(subSamples)>=12:
     nBitsSubband, bscf, bspl, adb = mpeg.assignBits(subFrame)
     
     #quantize subband samples of one frame
-    transmit = mpeg.quantizeSubbandFrame(subFrame,scaleFactorVal,nBitsSubband)
+    transmit = mpeg.quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband)
     transmitFrames.append(transmit)
 
 #%% Decoding
@@ -51,13 +53,17 @@ decodedSignal = mpeg.decoder(transmitFrames)
 import matplotlib.pyplot as plt
 
 plt.figure()
-plt.plot(x[0:32768,0])
+plt.plot(x[0:32160,0])
 plt.plot(decodedSignal[480:])
 
 plt.figure()
 plt.plot(x[0:32160,0]-decodedSignal[480:])
+
+
 #%% reveal error of quantization
+
 # import numpy as np
+# import matplotlib.pyplot as plt
 # decodedSubband = np.zeros((32,12))
 # for i in range(32):
 #     decodedSubband[i,:]=transmitSubband[i]*transmitScalefactorVal[i]

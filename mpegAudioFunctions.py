@@ -55,7 +55,7 @@ def polyphaseFilterbank(x):
      
 #%% 
 """
-Routine that takes blocks of audio and feeds it to the buffer
+Routine that takes blocks of audio and feeds them to the buffer
 """
 
 # takes raw audio signal, runs it into the analysisBuffer and calculates the 
@@ -132,19 +132,21 @@ def calcScaleFactors(subbandFrame):
     if subbandFrame.layer == 1:
         assert (subbandFrame.frame.shape==(32, 12)),"Wrong subbandFrame array dimensions!"
         subbandMaxVals = np.amax(np.abs(subbandFrame.frame),axis=1)
+        assert ((subbandMaxVals<2.0).all()), "Maximum subband value larger than 2!"
     else:
         print("Error! Layer II and III coding not implemented yet")
         raise SystemExit(0)
     
     scaleFactorTable = np.load('data/mpeg_scale_factors.npy') # scale factors defined by MPEG
-    scaleFactorTable = np.flip(scaleFactorTable)
+    scaleFactorTable = np.flip(scaleFactorTable) # needed for finding first value larger than sample value
     assert (len(scaleFactorTable)==63),"Table length not 64!"
     
     scaleFactor = np.zeros(32)
     scaleFactorIndex = []
     for iCompare in range(32):
         scaleFactor[iCompare]=scaleFactorTable[np.argmax(scaleFactorTable>subbandMaxVals[iCompare])]
-        scaleFactorIndex.append(63-np.argmax(scaleFactorTable>subbandMaxVals[iCompare]))
+        scaleFactorIndex.append(62-np.argmax(scaleFactorTable>subbandMaxVals[iCompare]))
+
     
     return scaleFactor, scaleFactorIndex
 
@@ -296,34 +298,36 @@ representing a block of the formatted bitstream.
 
 #
 class transmitFrame:
-    def __init__(self,nSubbands=None,nBitsSubband=None,scalefactorVal=None,quantSubbandSamples=None):
-        assert (len(nSubbands)==len(scalefactorVal)==len(quantSubbandSamples)), "Length of input lists not consistent!"
+    def __init__(self,nSubbands=None,nBitsSubband=None,scalefactorInd=None,quantSubbandSamples=None):
+        assert (len(nSubbands)==len(scalefactorInd)==len(quantSubbandSamples)), "Length of input lists not consistent!"
         self.nSubbands = nSubbands
         self.nBitsSubband = nBitsSubband
-        self.scalefactorVal = scalefactorVal
+        self.scalefactorInd = scalefactorInd
         self.quantSubbandSamples = quantSubbandSamples
         
 
-# multiply subband frame by scalefactors and quantize them with the number of bits
-def quantizeSubbandFrame(subbandFrame,scaleFactorVal,nBitsSubband):
+# multiply subband frame by scalefactors and qua0,,ntize them with the number of bits
+def quantizeSubbandFrame(subbandFrame,scaleFactorInd,nBitsSubband):
     
-    transmitScalefactorVal = []
+    transmitScalefactorInd = []
     transmitSubband = []
     transmitNSubbands = []
+    
+    scaleFactorTable = np.load('data/mpeg_scale_factors.npy') # scale factors defined by MPEG
     
     for iBand in range(32):
         if nBitsSubband[iBand]>0:
             transmitNSubbands.append(iBand)
-            transmitScalefactorVal.append(scaleFactorVal[iBand])
+            transmitScalefactorInd.append(scaleFactorInd[iBand])
             
-            normalizedBand = subbandFrame.frame[iBand,:]/scaleFactorVal[iBand]
+            normalizedBand = subbandFrame.frame[iBand,:]/scaleFactorTable[scaleFactorInd[iBand]]
             quantizedBand = subbandQuantizer(normalizedBand,nBitsSubband[iBand])
             
             #transmitSubband.append(codeSubband(quantizedBand,nBitsSubband[iBand]))
             transmitSubband.append(quantizedBand)
             
     
-    transmit=transmitFrame(transmitNSubbands,nBitsSubband,transmitScalefactorVal,transmitSubband)
+    transmit=transmitFrame(transmitNSubbands,nBitsSubband,transmitScalefactorInd,transmitSubband)
             
     return transmit
 
@@ -331,16 +335,34 @@ def quantizeSubbandFrame(subbandFrame,scaleFactorVal,nBitsSubband):
 # Quantizer defined by MPEG
 def subbandQuantizer(normalizedBand,nBits):
     
-    #nSteps = int(2**nBits-1)
     indBits = int(nBits-2)
-    #nSteps = np.load('data/mpeg_qc_layer_i_nSteps.npy')
+    
     A = np.load('data/mpeg_qc_layer_i_A.npy')
     B = np.load('data/mpeg_qc_layer_i_B.npy')
+    nSteps = np.load('data/mpeg_qc_layer_i_nSteps.npy')
     
     quantizedBand = A[indBits]*normalizedBand+B[indBits]
 
+    # assign each quantized value to a fixed value dependent on nBits
+    assignedVals = np.arange(-1,1+1e-12,2/(nSteps[indBits]-1))
+    threshVals   = np.arange(-1,A[indBits]+B[indBits],-2*B[indBits])-2*B[indBits]
+    
+    for iSample in range(len(quantizedBand)):
+        assert(-1<=quantizedBand[iSample]<=A[indBits]+B[indBits]),"Quantized value out of bounds!"
+        assigned=False
+        iStep=0
+        while not assigned:
+            if quantizedBand[iSample]<=threshVals[iStep]:
+                quantizedBand[iSample]=assignedVals[iStep]
+                assigned=True
+            iStep += 1
+            assert (iStep<33000), "Quantization while-loop error!"
+
     return quantizedBand
 
+
+            
+    
 # convert scale factor indices into binary representation for coding
 # NOTE: right now no conversion to binary yet
 # def codeSubband(quantizedBand,nBits):
@@ -422,10 +444,13 @@ def decoder(transmitFrames):
     
     decodedBands = np.zeros((nFrames*12,32))
     
-    for iFrame in range(nFrames):
-        for iBand in range(32):
-                decodedBands[iFrame*12:(iFrame+1)*12,iBand] = transmitFrames[iFrame].quantSubbandSamples[iBand]*transmitFrames[iFrame].scalefactorVal[iBand]
+    scaleFactorTable = np.load('data/mpeg_scale_factors.npy') # scale factors defined by MPEG
     
+    for iFrame in range(nFrames):
+        iBand=0
+        for indBand in transmitFrames[iFrame].nSubbands:
+                decodedBands[iFrame*12:(iFrame+1)*12,indBand] = transmitFrames[iFrame].quantSubbandSamples[iBand]*scaleFactorTable[transmitFrames[iFrame].scalefactorInd[iBand]]
+                iBand +=1
     
     synBuff = synthesisBuffer()
     decodedSignal=[]
