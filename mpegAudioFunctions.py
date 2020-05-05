@@ -63,6 +63,7 @@ def mFun(n,k):
     M = np.cos((2*n+1)*(k-16)*np.pi/64)
     
     return M
+
 #%% 
 """
 Routine that takes blocks of audio and feeds them to the buffer
@@ -189,7 +190,7 @@ def assignBits(subbandFrame,scaleFactorVal):
     # subbandFrame - a subbandFrame object containing 12 output samples of the
     #                polyphase filterbank
     
-    nTotalBits    =  384 # bits available per frame representing 384 samples @8bps
+    nTotalBits    = 3072 # bits available per frame representing 384 samples @8bps
     nHeaderBits   =   32 # bits needed for header
     nCrcBits      =    0 # CRC checkword, 16 if used
     nBitAllocBits =  128 # bit allocation -> codes 4bit int values 0...15 for each of 32 subbands
@@ -207,12 +208,21 @@ def assignBits(subbandFrame,scaleFactorVal):
         nScfBits, nSplBits = updateBitAllocation(nBitsSubband)
         nAvailableBits = nTotalBits - (nHeaderBits + nCrcBits + nBitAllocBits + nSplBits + nScfBits + nAncBits)
     
-    # for now it's just a fixed 8 bits per subband sample,  allocation routine will be included later
-    # nBitsSubband = []
-    # for iC in range(32):
-    #     nBitsSubband.append(8)
-    
     return nBitsSubband, nSplBits, nScfBits, nAvailableBits
+
+def possibleIncreaseInBits(nBitsSubband):
+    assert (len(nBitsSubband)==32),"Wrong length of input list!"
+    # given the current state, return the smallest increase in bits allocated
+    # in a potential next iteration step
+    
+    if not not [i for i, e in enumerate(nBitsSubband) if 0<e<15]:
+        minIncrease = 12
+    elif not not [i for i, e in enumerate(nBitsSubband) if e == 0]:
+        minIncrease = 30
+    else:
+        minIncrease = 0
+
+    return minIncrease
 
 # compare MNRs of each subband and return first subband with lowest MNR
 def determineMinimalMNR(nBitsSubband,scaleFactorVal):
@@ -228,6 +238,33 @@ def determineMinimalMNR(nBitsSubband,scaleFactorVal):
     
     return minMNRIndex
 
+# calculate MNR of all subbands
+def updateMNR(nBitsSubband,scaleFactorVal):
+    
+    snrTable = np.load('data/mpeg_snr_layer_i.npy') # SNR levels defined by MPEG
+    SNR = np.zeros(32)
+    MNR = np.zeros(32)
+    nBands = 32
+    
+    for iBand in range(nBands):
+        assert (nBitsSubband[iBand]<16),"Too many bits assigned!"
+        snrIndex = np.where(snrTable[:,0] == nBitsSubband[iBand])[0][0]
+        SNR = snrTable[snrIndex,2]
+        
+        #SMR = 0 # eventually determine this from psychoacoustic model
+        SMR = equivSMR(scaleFactorVal[iBand])
+        
+        MNR[iBand] = SNR - SMR
+        
+    return MNR
+
+# calculate SMR equivalent from scalefactor
+def equivSMR(scaleFactorVal):
+    
+    equivSMR = 1000*np.log10(scaleFactorVal+1)
+    
+    return equivSMR
+
 # increase number of allocated bits to chosen subband to next step
 def increaseNBits(nBitsSubband,minSubBand):    
     
@@ -241,33 +278,6 @@ def increaseNBits(nBitsSubband,minSubBand):
         nBitsSubband[minSubBand] += 0
     
     return nBitsSubband
-
-# calculate MNR of all subbands
-def updateMNR(nBitsSubband,scaleFactorVal):
-    
-    snrTable = np.load('data/mpeg_snr_layer_i.npy') # SNR levels defined by MPEG
-    SNR = np.zeros(32)
-    MNR = np.zeros(32)
-    nBands = 32
-    
-    for iBand in range(nBands):
-        assert (nBitsSubband[iBand]<16),"Too many bits assigned!"
-        snrIndex = np.where(snrTable[:,0] == nBitsSubband[iBand])[0][0]
-        SNR[iBand] = snrTable[snrIndex,2]
-        
-        #SMR = 0 # eventually determine this from psychoacoustic model
-        SMR = equivSMR(scaleFactorVal[iBand])
-        
-        MNR[iBand] = SNR[iBand] - SMR
-        
-    return MNR
-
-# calculate SMR equivalent from scalefactor
-def equivSMR(scaleFactorVal):
-    
-    equivSMR = 1000*np.log10(scaleFactorVal+1)
-    
-    return equivSMR
 
 # returns new number of bits allocated to code subband samples and scalefactors
 # according to the update of nBits per subband
@@ -287,25 +297,6 @@ def updateBitAllocation(nBitsSubband):
             nSplBits += 0
     
     return nScfBits, nSplBits
-
-def possibleIncreaseInBits(nBitsSubband):
-    assert (len(nBitsSubband)==32),"Wrong length of input list!"
-    # given the current state, return the smallest increase in bits allocated
-    # in a potential next iteration step
-    
-    if not not [i for i, e in enumerate(nBitsSubband) if 0<e<15]:
-        minIncrease = 12
-    elif not not [i for i, e in enumerate(nBitsSubband) if e == 0]:
-        minIncrease = 30
-    else:
-        minIncrease = 0
-
-    return minIncrease
-
-
-
-
-
 
 
 

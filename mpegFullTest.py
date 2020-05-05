@@ -21,7 +21,7 @@ filename = 'data/audio/watermelonman_audio.wav'
 sampleRate, x=wav.read(filename)
 #x = x[20000:,:]
 #x = x[3400000:,:]
-x = x[20000:108200,:]
+x = x[0:3969000,:]
 x = x/32768 # normalize values between -1 and 1, I suppose that's the values the coder wants to work with
 
 
@@ -32,6 +32,7 @@ x = x/32768 # normalize values between -1 and 1, I suppose that's the values the
 
 
 #%% calculate polyphase filterbank output
+
 start = time.time()
 subSamples = mpeg.feedCoder(x)
 end = time.time()
@@ -39,44 +40,68 @@ print("Subband samples calculated in")
 print(end - start)
 
 subSamplesArray=np.array(subSamples)
+
 #%% initialize and push subband samples into a subbandFrame object
 
 start = time.time()
-
 subFrame = mpeg.subbandFrame()
 
 transmitFrames=[]
 while len(subSamples)>=12:
+    
     subSamples = subFrame.pushFrame(subSamples)
     
-    #calculate scalefactors for current frame
+    # calculate scalefactors for current frame
+    
+    #start = time.time()
     scaleFactorVal, scaleFactorInd = mpeg.calcScaleFactors(subFrame)
+    #end = time.time()
+    #print("scalefactor calculation in")
+    #print(end - start)
     
     # right now no conversion to binary yet
-    #mpeg.codeScaleFactor(scaleFactorIndex)
-    
+    # mpeg.codeScaleFactor(scaleFactorIndex)
+
+
     #bit allocation for one frame
-    nBitsSubband, bscf, bspl, adb = mpeg.assignBits(subFrame,scaleFactorVal)
     
+    #start = time.time()
+    nBitsSubband, bscf, bspl, adb = mpeg.assignBits(subFrame,scaleFactorVal)
+    #end = time.time()
+    #print("bit allocation in")
+    #print(end - start)
+
+
     #quantize subband samples of one frame
+    
+    #start = time.time()
     transmit = mpeg.quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband)
     transmitFrames.append(transmit)
-
+    #end = time.time()
+    #print("quantization in")
+    #print(end - start)
+    
+    
 end = time.time()
-print("Scalefactor calculation, bit allocation and quantization in")
+print("scaling, bit allocation and quantizing in")
 print(end - start)
 
+nBitsAllocated = []
+for iFrame in range(len(transmitFrames)):
+    nBitsAllocated.append(transmitFrames[iFrame].nBitsSubband)
+nBitsAllocated=np.array(nBitsAllocated)
 #%% Decoding
+
 start = time.time()
-
 decodedSignal = mpeg.decoder(transmitFrames)
-
 end = time.time()
 print("Decoded signal in")
 print(end - start)
 
-#%% Error evaluation
 
+
+
+#%% Error evaluation
 
 import matplotlib.pyplot as plt
 
@@ -117,8 +142,9 @@ axes[1, 1].grid(b=True,which='both')
 axes[1, 1].set_xlim((10, 20000))
 
 #%%
-wav.write('test_source.wav', 44100, x)
+wav.write('test_source.wav', 44100, x[:,0])
 wav.write('test_recons.wav', 44100, decodedSignal[480:])
+
 #%% reveal error of quantization
 
 # import numpy as np
