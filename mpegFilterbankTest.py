@@ -36,7 +36,7 @@ x = x/32768 # normalize values between -1 and 1, I suppose that's the values the
 #2067.1875
 #2756.25
 
-x = np.transpose(np.array([np.cos(2*np.pi*(1000)*np.linspace(0,2,88201))]))
+#x = np.transpose(np.array([np.cos(2*np.pi*(750)*np.linspace(0,2,88201))]))
 #x = np.transpose(np.array([np.sin(2*np.pi*4823.4375*np.linspace(0,2,88201))+np.cos(2*np.pi*2756.25*np.linspace(0,2,88201))]))
 
 #x = np.transpose(np.array([2*(0.5-np.random.uniform(size=88200))]))
@@ -70,15 +70,15 @@ print(end - start)
 
 plt.figure()
 plt.plot(x[:,0])
-plt.plot(decodedSignal[480:])
+plt.plot(decodedSignal[481:])
 
 plt.figure()
 plt.title('squared error')
-plt.plot((x[0:len(decodedSignal)-480,0]-decodedSignal[480:])**2)
+plt.plot((x[0:len(decodedSignal)-481,0]-decodedSignal[481:])**2)
 
 # spectral
-f, Px = scisig.welch(x[0:len(decodedSignal)-480,0], fs=sampleRate, window='hanning', nperseg=32768, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
-f, Py = scisig.welch(decodedSignal[480:],           fs=sampleRate, window='hanning', nperseg=32768, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
+f, Px = scisig.welch(x[0:len(decodedSignal)-481,0], fs=sampleRate, window='hamming', nperseg=32768, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
+f, Py = scisig.welch(decodedSignal[481:],           fs=sampleRate, window='hamming', nperseg=32768, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
 
 plt.figure()
 plt.title('spectral error')
@@ -92,7 +92,7 @@ plt.title('spectral error')
 plt.plot(f,10*np.log10(Px))
 plt.plot(f,10*np.log10(Py))
 #plt.plot(f,-np.abs(Px-Py))
-#plt.xscale('log')
+plt.xscale('log')
 
 #%%
 wav.write('test_source.wav', 44100, x)

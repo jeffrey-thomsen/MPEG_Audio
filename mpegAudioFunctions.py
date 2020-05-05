@@ -35,7 +35,7 @@ class analysisBuffer:
     def pushBlock(self,sampleBlock):
         assert (len(sampleBlock)==32),"Sample block length not 32!"
         self.bufferVal[32:] = self.bufferVal[:-32]
-        self.bufferVal[0:32] = sampleBlock
+        self.bufferVal[0:32] = sampleBlock[::-1]
 
 # analysis filterbank for MPEG Audio subband coding
 def polyphaseFilterbank(x):
@@ -189,7 +189,7 @@ def assignBits(subbandFrame,scaleFactorVal):
     # subbandFrame - a subbandFrame object containing 12 output samples of the
     #                polyphase filterbank
     
-    nTotalBits    = 3072 # bits available per frame representing 384 samples @8bps
+    nTotalBits    =  384 # bits available per frame representing 384 samples @8bps
     nHeaderBits   =   32 # bits needed for header
     nCrcBits      =    0 # CRC checkword, 16 if used
     nBitAllocBits =  128 # bit allocation -> codes 4bit int values 0...15 for each of 32 subbands
@@ -348,8 +348,6 @@ def quantizeSubbandFrame(subbandFrame,scaleFactorInd,nBitsSubband):
             normalizedBand = subbandFrame.frame[iBand,:]/scaleFactorTable[scaleFactorInd[iBand]]
             quantizedBand = subbandQuantizer(normalizedBand,nBitsSubband[iBand])
             
-            # for test purposes, do not quantize
-            quantizedBand = quantizedBand
             
             #transmitSubband.append(codeSubband(quantizedBand,nBitsSubband[iBand]))
             transmitSubband.append(quantizedBand)
