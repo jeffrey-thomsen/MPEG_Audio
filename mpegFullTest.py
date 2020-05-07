@@ -17,17 +17,41 @@ import numpy as np
 
 import time
 #%% load audio
-filename = 'data/audio/watermelonman_audio.wav'
+
+# filename = 'data/audio/fixingahole_audio.wav'
+# sampleRate, x=wav.read(filename)
+# x = np.expand_dims(np.mean(x[0:441000,:], axis=1), axis = 1)
+
+# filename = 'data/audio/smooth_audio.wav'
+# sampleRate, x=wav.read(filename)
+# # smooth: 176400:264600 9238950:9327150
+# # x = x[176400:264600,:]
+# x = np.expand_dims(np.mean(x[176400:264600,:], axis=1), axis = 1)
+
+# filename = 'data/audio/nara_audio.wav'
+# sampleRate, x=wav.read(filename)
+# # nara: 9238950:9327150
+# x = np.expand_dims(np.mean(x[9238950:9327150,:], axis=1), axis = 1)
+
+filename = 'data/audio/traffic_audio.wav'
 sampleRate, x=wav.read(filename)
-#x = x[20000:,:]
-#x = x[3400000:,:]
-x = x[0:3969000,:]
+# traffic: 0:573300
+# x = np.expand_dims(x[0:573300,1], axis = 1)
+x = np.expand_dims(x[:,1], axis = 1)
+# x = np.expand_dims(np.mean(x[0:573300,:], axis=1), axis = 1)
+
+# filename = 'data/audio/watermelonman_audio.wav'
+# sampleRate, x=wav.read(filename)
+# x = np.expand_dims(np.mean(x[20000:64100,:], axis=1), axis = 1)
+# x = np.expand_dims(np.mean( x[2593080:2637180,:], axis=1), axis = 1)
+
+
+#%% 
+
 x = x/32768 # normalize values between -1 and 1, I suppose that's the values the coder wants to work with
 
-
-
+# pure tones and noise
 #x = np.transpose(np.array([np.sin(2*np.pi*918.75*np.linspace(0,0.5,22051))]))
-
 #x = np.transpose(np.array([2*(0.5-np.random.uniform(size=22050))]))
 
 
@@ -59,11 +83,8 @@ while len(subSamples)>=12:
     #print("scalefactor calculation in")
     #print(end - start)
     
-    # right now no conversion to binary yet
-    # mpeg.codeScaleFactor(scaleFactorIndex)
 
-
-    #bit allocation for one frame
+    # bit allocation for one frame
     
     #start = time.time()
     nBitsSubband, bscf, bspl, adb = mpeg.assignBits(subFrame,scaleFactorVal)
@@ -72,7 +93,7 @@ while len(subSamples)>=12:
     #print(end - start)
 
 
-    #quantize subband samples of one frame
+    # quantize subband samples of one frame
     
     #start = time.time()
     transmit = mpeg.quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband)
@@ -86,10 +107,12 @@ end = time.time()
 print("scaling, bit allocation and quantizing in")
 print(end - start)
 
+# just for checking bit allocation
 nBitsAllocated = []
 for iFrame in range(len(transmitFrames)):
     nBitsAllocated.append(transmitFrames[iFrame].nBitsSubband)
 nBitsAllocated=np.array(nBitsAllocated)
+
 #%% Decoding
 
 start = time.time()
@@ -99,11 +122,14 @@ print("Decoded signal in")
 print(end - start)
 
 
-
-
 #%% Error evaluation
 
 import matplotlib.pyplot as plt
+
+plt.figure(figsize=(3, 7))
+plt.imshow(nBitsAllocated,vmin=0,vmax=15)
+plt.colorbar()
+plt.title('bit allocation')
 
 fig, axes = plt.subplots(2, 2, figsize=(10, 7))
 
@@ -141,9 +167,14 @@ axes[1, 1].set_xscale('log')
 axes[1, 1].grid(b=True,which='both')
 axes[1, 1].set_xlim((10, 20000))
 
-#%%
-wav.write('test_source.wav', 44100, x[:,0])
-wav.write('test_recons.wav', 44100, decodedSignal[480:])
+#%% save audio files
+
+# bring data back into int16 format
+xInt = np.round(x[:,0]*32768).astype(np.int16)
+decodedInt=np.round(decodedSignal[480:]*32768).astype(np.int16)
+
+wav.write('test_source.wav', 44100, xInt)
+wav.write('test_recons.wav', 44100, decodedInt)
 
 #%% reveal error of quantization
 

@@ -35,8 +35,8 @@ x = x/32768 # normalize values between -1 and 1, I suppose that's the values the
 #1378.125
 #2067.1875
 #2756.25
-
-#x = np.transpose(np.array([np.cos(2*np.pi*(750)*np.linspace(0,2,88201))]))
+#%%
+x = np.transpose(np.array([np.cos(2*np.pi*(14814.84375)*np.linspace(0,2,88201))]))
 #x = np.transpose(np.array([np.sin(2*np.pi*4823.4375*np.linspace(0,2,88201))+np.cos(2*np.pi*2756.25*np.linspace(0,2,88201))]))
 
 #x = np.transpose(np.array([2*(0.5-np.random.uniform(size=88200))]))

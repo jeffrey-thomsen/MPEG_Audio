@@ -190,7 +190,7 @@ def assignBits(subbandFrame,scaleFactorVal):
     # subbandFrame - a subbandFrame object containing 12 output samples of the
     #                polyphase filterbank
     
-    nTotalBits    = 3072 # bits available per frame representing 384 samples @8bps
+    nTotalBits    =  768 # bits available per frame representing 384 samples @8bps
     nHeaderBits   =   32 # bits needed for header
     nCrcBits      =    0 # CRC checkword, 16 if used
     nBitAllocBits =  128 # bit allocation -> codes 4bit int values 0...15 for each of 32 subbands
@@ -261,7 +261,9 @@ def updateMNR(nBitsSubband,scaleFactorVal):
 # calculate SMR equivalent from scalefactor
 def equivSMR(scaleFactorVal):
     
-    equivSMR = 1000*np.log10(scaleFactorVal+1)
+    #equivSMR = 0
+    #equivSMR = 1000*np.log10(scaleFactorVal+1)
+    equivSMR = 20 * np.log10(scaleFactorVal * 32768) - 10
     
     return equivSMR
 
