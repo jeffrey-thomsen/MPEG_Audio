@@ -1,3 +1,4 @@
 data/audio/
 data/plots/
 test_*
+*.wav

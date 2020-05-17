@@ -185,12 +185,14 @@ assigns a number of coding bits to each subband
 
 # main function for bit allocation that calculates the number of bits to be
 # assigned to each subband of a frame of subband samples
-def assignBits(subbandFrame,scaleFactorVal):
+def assignBits(subbandFrame,scaleFactorVal,nTotalBits):
     # Input:
     # subbandFrame - a subbandFrame object containing 12 output samples of the
     #                polyphase filterbank
+    # scaleFactorVal - an array containing the scale factors for each subband
+    # nTotalBits - number of bits to be allocated to this frame
     
-    nTotalBits    =  768 # bits available per frame representing 384 samples @8bps
+    #nTotalBits    =  768 # bits available per frame representing 384 samples @8bps
     nHeaderBits   =   32 # bits needed for header
     nCrcBits      =    0 # CRC checkword, 16 if used
     nBitAllocBits =  128 # bit allocation -> codes 4bit int values 0...15 for each of 32 subbands
@@ -202,11 +204,12 @@ def assignBits(subbandFrame,scaleFactorVal):
     
     while (nAvailableBits >= possibleIncreaseInBits(nBitsSubband)) & (np.where(nBitsSubband < 15)[0].size > 0):
         
-        minSubBand = determineMinimalMNR(nBitsSubband,scaleFactorVal)
+        minSubBand = determineMinimalMNR(nBitsSubband,scaleFactorVal,nAvailableBits)
         nBitsSubband = increaseNBits(nBitsSubband,minSubBand)
         
         nScfBits, nSplBits = updateBitAllocation(nBitsSubband)
         nAvailableBits = nTotalBits - (nHeaderBits + nCrcBits + nBitAllocBits + nSplBits + nScfBits + nAncBits)
+        assert (nAvailableBits>=0),"Allocated too many bits!"
     
     return nBitsSubband, nSplBits, nScfBits, nAvailableBits
 
@@ -225,7 +228,7 @@ def possibleIncreaseInBits(nBitsSubband):
     return minIncrease
 
 # compare MNRs of each subband and return first subband with lowest MNR
-def determineMinimalMNR(nBitsSubband,scaleFactorVal):
+def determineMinimalMNR(nBitsSubband,scaleFactorVal,nAvailableBits):
     assert (len(nBitsSubband)==32),"Wrong length of input list!"
     
     MNR = updateMNR(nBitsSubband,scaleFactorVal)
@@ -235,6 +238,11 @@ def determineMinimalMNR(nBitsSubband,scaleFactorVal):
     while minMNRIndex in np.where(nBitsSubband == 15)[0]:
         MNR[minMNRIndex] = np.inf
         minMNRIndex = np.argmin(MNR)
+    
+    if nAvailableBits<30:
+        while minMNRIndex in np.where(nBitsSubband == 0)[0]:
+            MNR[minMNRIndex] = np.inf
+            minMNRIndex = np.argmin(MNR)
     
     return minMNRIndex
 
