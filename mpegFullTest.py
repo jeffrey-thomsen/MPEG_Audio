@@ -6,7 +6,7 @@ Created on Tue Apr 14 14:31:56 2020
 """
 
 """
-cleaner, top-to-bottom test script for my MPEG Audio coder
+cleaner, top-to-bottom test script for testing my MPEG Audio coder
 """
 
 import mpegAudioFunctions as mpeg
@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 
 #%% define bitrate
 
-nTotalBits = 768 # 768 equals 2bps
+nTotalBits = 384 # 768 equals 2bps
 
 #%% load audio
 
@@ -41,15 +41,20 @@ nTotalBits = 768 # 768 equals 2bps
 # sampleRate, x=wav.read(filename)
 # # nara: 9238950:9327150
 # # x = np.expand_dims(np.mean(x, axis=1), axis = 1)
-# x = np.expand_dims(np.mean(x[9238950:9327150,:], axis=1), axis = 1)
+# # x = np.expand_dims(np.mean(x[9238950:9327150,:], axis=1), axis = 1)
+# x = np.expand_dims(x[:,1], axis = 1)
 
-filename = 'data/audio/traffic_audio.wav'
+# filename = 'data/audio/traffic_audio.wav'
+# sampleRate, x=wav.read(filename)
+# # traffic: 0:573300
+# # x = np.expand_dims(x[0:88200,1], axis = 1)
+# # x = np.expand_dims(x[0:573300,1], axis = 1)
+# x = np.expand_dims(x[:,1], axis = 1)
+# # x = np.expand_dims(np.mean(x[0:573300,:], axis=1), axis = 1)
+
+filename = 'data/audio/cupid_audio.wav'
 sampleRate, x=wav.read(filename)
-# traffic: 0:573300
-# x = np.expand_dims(x[0:88200,1], axis = 1)
-# x = np.expand_dims(x[0:573300,1], axis = 1)
 x = np.expand_dims(x[:,1], axis = 1)
-# x = np.expand_dims(np.mean(x[0:573300,:], axis=1), axis = 1)
 
 # filename = 'data/audio/watermelonman_audio.wav'
 # sampleRate, x=wav.read(filename)
@@ -64,6 +69,8 @@ x = x/32768 # normalize values between -1 and 1, I suppose that's the values the
 # pure tones and noise
 #x = np.transpose(np.array([np.sin(2*np.pi*918.75*np.linspace(0,0.5,22051))]))
 #x = np.transpose(np.array([2*(0.5-np.random.uniform(size=22050))]))
+
+
 
 
 #%% calculate polyphase filterbank output
@@ -144,6 +151,8 @@ for iFrame in range(len(transmitFrames)):
        rescaledSubSamples[12*iFrame:12*iFrame+12,transmitFrames[iFrame].nSubbands[iSubband]]  = np.array(transmitFrames[iFrame].quantSubbandSamples)[iSubband]*scaleFactorTable[transmitFrames[iFrame].scalefactorInd[iSubband]]
      
 scaleFactorInd = [item for sublist in scaleFactorInd for item in sublist]
+
+
 #%% Decoding
 
 start = time.time()
@@ -153,6 +162,8 @@ decodedSignal = mpeg.decoder(transmitFrames)
 end = time.time()
 print("Decoded signal in")
 print(end - start)
+
+
 
 
 
@@ -171,9 +182,6 @@ mso = np.mean(decodedSignal[481:]**2)
 snr = 10*np.log10(mso/mse)
 print("SNR =",snr,"dB")
 
-# operational rate-distortion
-opratedist = 0.5*np.log2(np.var(x)/mse)
-print("Operational rate-distortion =",opratedist,"\n")
 
 # code length
 
@@ -188,90 +196,65 @@ compressionfactor = inputlength/codelength
 print("compression factor =",compressionfactor,"\n")
 
 
-# Entropy
+# Entropy estimators
 
-# ideal adaptive code length
-# def idealadaptivecodelength(x,context):
-#     yay=0
-#     nay=0
-#     phat=[]
-#     for i in range(context,len(x)):
-#         value,counts = np.unique(x[i-context:i-1],return_counts=True)
-#         if x[i] in value:
-#             icount = counts[np.where(value==x[i])[0][0]]
-#             yay+=1
-#         else:
-#             icount = 0
-#             nay+=1
-#         phat.append((icount+1) / (np.sum(counts)+len(counts)*1))
-        
-#     idealadaptivecodelength=-np.sum(np.log2(phat))
-#     print("Yay to nay",yay,nay,"=",yay/nay)
+def idealadaptivecodelength(x):
+    # x - dataset
     
-#     return idealadaptivecodelength
+    # returns the dictionary A and a corresponding array counts with the number
+    # of occurances
+    A, counts = np.unique(x,return_counts=True)
+    
+    lenA = len(A)
+    lenX = len(x)
+    
+    counter = np.zeros(lenA,dtype=int)
+    phat=np.zeros(lenX)
+    
+    for i in range(len(x)):
+        
+        ind = A==x[i]
+    
+        phat[i]=((counter[ind]+1) / (i+lenA*1))
+        
+        counter[ind]+=1
+        
+    idealadaptivecodelength=-np.sum(np.log2(phat)) / lenX
+    
+    assert (np.all(counts==counter)), "Counting mistake!"
+    
+    return idealadaptivecodelength   
+    
 
-# source
-value,counts = np.unique(x,return_counts=True)
-normcounts = counts/len(x)
-sourceentropy = -np.mean(normcounts*np.log2(normcounts))
-empiricalselfentropy = -np.mean(np.log2(normcounts))
-bayesestimate = (counts+0.5) / (len(x)+len(counts)*0.5)
-idealadaptivecodelength = -np.sum(np.log2(bayesestimate))
-print("Source")
-print("Empirical self-entropy =",empiricalselfentropy)
-print("< True entropy <")
-print("Ideal adaptive code length =",idealadaptivecodelength,"\n")
+def empiricalselfentropy(x):
+    
+    lenX = len(x)
+    A,counts = np.unique(x,return_counts=True)
+    normcounts = counts/lenX
+    
+    assert(np.all(normcounts!=0)),"0 encountered!"
+    
+    phat=np.zeros(lenX)
+    
+    for i in range(lenX):
+        
+        ind = A==x[i]
+    
+        phat[i] = counts[ind]/lenX
 
-# subband samples
-value,counts = np.unique(subSamplesArray,return_counts=True)
-normcounts = counts/len(x)
-sourceentropy = -np.mean(normcounts*np.log2(normcounts))
-empiricalselfentropy = -np.mean(np.log2(normcounts))
-bayesestimate = (counts+0.5) / (len(x)+len(counts)*0.5)
-idealadaptivecodelength = -np.sum(np.log2(bayesestimate))
-print("Source subband samples")
-print("Empirical self-entropy =",empiricalselfentropy)
-print("< True entropy <")
-print("Ideal adaptive code length =",idealadaptivecodelength,"\n")
-
-# quantized samples
-value,counts = np.unique(quantSubbandSamples,return_counts=True)
-normcounts = counts/len(x)
-sourceentropy = -np.mean(normcounts*np.log2(normcounts))
-empiricalselfentropy = -np.mean(np.log2(normcounts))
-bayesestimate = (counts+0.5) / (len(x)+len(counts)*0.5)
-idealadaptivecodelength = -np.sum(np.log2(bayesestimate))
-print("Quantized subband samples")
-print("Empirical self-entropy =",empiricalselfentropy)
-print("< True entropy <")
-print("Ideal adaptive code length =",idealadaptivecodelength,"\n")
+    
+    ie = -np.mean(np.log2(phat))
+    #ie = -np.mean(np.log2((counts+1)/(len(x)+len(counts))))
+    
+    return ie
 
 # scale factors
-value,counts = np.unique(scaleFactorInd,return_counts=True)
-normcounts = counts/len(x)
-sourceentropy = -np.mean(normcounts*np.log2(normcounts))
-empiricalselfentropy = -np.mean(np.log2(normcounts))
-bayesestimate = (counts+0.5) / (len(x)+len(counts)*0.5)
-idealadaptivecodelength = -np.sum(np.log2(bayesestimate))
+ese = empiricalselfentropy(scaleFactorInd)
+iacl = idealadaptivecodelength(scaleFactorInd)
 print("Scale factors")
-print("Empirical self-entropy =",empiricalselfentropy)
-print("< True entropy <")
-print("Ideal adaptive code length =",idealadaptivecodelength,"\n")
-
-# output signal
-value,counts = np.unique(decodedSignal,return_counts=True)
-normcounts = counts/len(x)
-sourceentropy = -np.mean(normcounts*np.log2(normcounts))
-empiricalselfentropy = -np.mean(np.log2(normcounts))
-bayesestimate = (counts+0.5) / (len(x)+len(counts)*0.5)
-idealadaptivecodelength = -np.sum(np.log2(bayesestimate))
-print("Output signal")
-print("Empirical self-entropy =",empiricalselfentropy)
-print("< True entropy <")
-print("Ideal adaptive code length =",idealadaptivecodelength,"\n")
-
-
-
+print("Empirical self-entropy =",ese)
+print("< Source entropy <")
+print("Ideal adaptive code length =",iacl,"\n")
 
 
 #%%
@@ -305,12 +288,6 @@ axes[1, 1].set_xscale('log')
 axes[1, 1].grid(b=True,which='both')
 axes[1, 1].set_xlim((10, 20000))
 
-# # show bit allocation
-# plt.figure(figsize=(3, 7))
-# plt.imshow(nBitsAllocated,vmin=0,vmax=15)
-# plt.colorbar()
-# plt.title('bit allocation')
-
 #%% save audio files
 
 # bring data back into int16 format
@@ -320,14 +297,8 @@ decodedInt=np.round(decodedSignal[480:]*32768).astype(np.int16)
 wav.write('test_source.wav', 44100, xInt)
 wav.write('test_recons.wav', 44100, decodedInt)
 
-#%% reveal error of quantization
 
-# import numpy as np
-# import matplotlib.pyplot as plt
-# decodedSubband = np.zeros((32,12))
-# for i in range(32):
-#     decodedSubband[i,:]=transmitSubband[i]*transmitScalefactorVal[i]
-    
-# decErr=decodedSubband/subFrame.frame
+#%% misc. for evaluation
 
-# print(np.mean(decErr))
+scaleFactorIndArray=np.array(scaleFactorInd)
+nBitsAllocatedArray=np.array(nBitsAllocated)
