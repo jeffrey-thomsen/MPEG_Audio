@@ -6,7 +6,7 @@ Created on Tue Apr 14 14:31:56 2020
 """
 
 """
-cleaner, top-to-bottom test script for testing my MPEG Audio coder
+Test script for testing my MPEG Audio coder
 """
 
 import mpegAudioFunctions as mpeg
@@ -22,10 +22,44 @@ import time
 import matplotlib.pyplot as plt
 
 #%% define bitrate
+"""
+The bitrate is the quality control parameter of this coder. The number
+specifies the number of bits available to code one frame, representing
+384 input samples
+"""
 
 nTotalBits = 384 # 768 equals 2bps
 
 #%% load audio
+"""
+Loading a WAV file, reducing it to one channel and making sure the array has
+the dimensions (n,1). Consider using only a short portion of maybe 1 second
+x[0:44100,1] tot test the coder, as it is very slow
+"""
+
+# filename = 'data/audio/cupid_audio.wav'
+# sampleRate, x=wav.read(filename)
+# x = np.expand_dims(x[:,1], axis = 1)
+
+filename = 'data/audio/traffic_audio.wav'
+sampleRate, x=wav.read(filename)
+# traffic: 0:573300
+x = np.expand_dims(x[0:88200,1], axis = 1)
+# x = np.expand_dims(x[0:573300,1], axis = 1)
+# x = np.expand_dims(x[:,1], axis = 1)
+# x = np.expand_dims(np.mean(x[0:573300,:], axis=1), axis = 1)
+
+# filename = 'data/audio/nara_audio.wav'
+# sampleRate, x=wav.read(filename)
+# # nara: 9238950:9327150
+# # x = np.expand_dims(np.mean(x, axis=1), axis = 1)
+# # x = np.expand_dims(np.mean(x[9238950:9327150,:], axis=1), axis = 1)
+# x = np.expand_dims(x[:,1], axis = 1)
+
+# filename = 'data/audio/watermelonman_audio.wav'
+# sampleRate, x=wav.read(filename)
+# x = np.expand_dims(np.mean(x[20000:64100,:], axis=1), axis = 1)
+# x = np.expand_dims(np.mean( x[2593080:2637180,:], axis=1), axis = 1)
 
 # filename = 'data/audio/fixingahole_audio.wav'
 # sampleRate, x=wav.read(filename)
@@ -37,42 +71,23 @@ nTotalBits = 384 # 768 equals 2bps
 # # x = x[176400:264600,:]
 # x = np.expand_dims(np.mean(x[176400:264600,:], axis=1), axis = 1)
 
-# filename = 'data/audio/nara_audio.wav'
-# sampleRate, x=wav.read(filename)
-# # nara: 9238950:9327150
-# # x = np.expand_dims(np.mean(x, axis=1), axis = 1)
-# # x = np.expand_dims(np.mean(x[9238950:9327150,:], axis=1), axis = 1)
-# x = np.expand_dims(x[:,1], axis = 1)
-
-# filename = 'data/audio/traffic_audio.wav'
-# sampleRate, x=wav.read(filename)
-# # traffic: 0:573300
-# # x = np.expand_dims(x[0:88200,1], axis = 1)
-# # x = np.expand_dims(x[0:573300,1], axis = 1)
-# x = np.expand_dims(x[:,1], axis = 1)
-# # x = np.expand_dims(np.mean(x[0:573300,:], axis=1), axis = 1)
-
-filename = 'data/audio/cupid_audio.wav'
-sampleRate, x=wav.read(filename)
-x = np.expand_dims(x[:,1], axis = 1)
-
-# filename = 'data/audio/watermelonman_audio.wav'
-# sampleRate, x=wav.read(filename)
-# x = np.expand_dims(np.mean(x[20000:64100,:], axis=1), axis = 1)
-# x = np.expand_dims(np.mean( x[2593080:2637180,:], axis=1), axis = 1)
-
 
 #%% 
 
-x = x/32768 # normalize values between -1 and 1, I suppose that's the values the coder wants to work with
-
-# pure tones and noise
-#x = np.transpose(np.array([np.sin(2*np.pi*918.75*np.linspace(0,0.5,22051))]))
-#x = np.transpose(np.array([2*(0.5-np.random.uniform(size=22050))]))
+# normalize values between -1 and 1, I suppose that's the values the coder wants to work with
+x = x/32768 
 
 
+# # pure tones and noise as alternative test signals
+# x = np.transpose(np.array([np.sin(2*np.pi*918.75*np.linspace(0,0.5,22051))]))
+# x = np.transpose(np.array([2*(0.5-np.random.uniform(size=22050))]))
 
 
+"""
+The following lines represent the encoding and decoding process, divided up
+into three parts of time-to-frequency mapping, bit allocation/quantizing and
+decoding (i.e. frequency-to-time mapping)
+"""
 #%% calculate polyphase filterbank output
 
 start = time.time()
@@ -161,18 +176,19 @@ decodedSignal = mpeg.decoder(transmitFrames)
 
 end = time.time()
 print("Decoded signal in")
-print(end - start)
+print(end - start,"\n")
 
 
 
 
-
-
-
+"""
+The following lines represent the evaluation stage used for the project report
+"""
 #%% Evaluation
 
-# mean squared error
+# rate-distortion
 
+# mean squared error
 mse = np.mean((x[0:len(decodedSignal)-481,0]-decodedSignal[481:])**2)
 print("MSE =",mse)
 
@@ -196,7 +212,7 @@ compressionfactor = inputlength/codelength
 print("compression factor =",compressionfactor,"\n")
 
 
-# Entropy estimators
+# entropy estimate
 
 def idealadaptivecodelength(x):
     # x - dataset
@@ -253,11 +269,11 @@ ese = empiricalselfentropy(scaleFactorInd)
 iacl = idealadaptivecodelength(scaleFactorInd)
 print("Scale factors")
 print("Empirical self-entropy =",ese)
-print("< Source entropy <")
+print("< H(X) <")
 print("Ideal adaptive code length =",iacl,"\n")
 
 
-#%%
+#%% Comparison plots
 
 # power spectra
 f, Px = scisig.welch(x[0:len(decodedSignal)-481,0], fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)

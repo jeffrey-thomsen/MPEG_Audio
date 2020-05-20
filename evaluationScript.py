@@ -89,7 +89,7 @@ sampleRate = 44100
 f, Px = scisig.welch(x[0:len(decodedSignal)-481,0], fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
 f, Py = scisig.welch(decodedSignal[481:],           fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
 
-plt.close()
+# spectral comparison
 plt.figure()
 plt.plot(f,10*np.log10(Py1/Px),label='0.5 bps')
 plt.plot(f,10*np.log10(Py2/Px),label='1.0 bps')
@@ -103,7 +103,7 @@ plt.xlabel('Frequency (Hz)')
 plt.ylabel('Spectral deviation (dB)')
 plt.legend()
 
-plt.close()
+# power spectrum of the input signal
 plt.figure()
 plt.plot(f,10*np.log10(Px))
 plt.xscale('log')
@@ -119,7 +119,6 @@ plt.ylabel('Power spectrum (dB)')
 rate = [0.5, 0.625, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 8.0]
 dist = [5.54, 10.49, 14.61, 18.03, 21.67, 25.10, 28.78, 32.41, 35.71, 38.63, 63.61]
 
-plt.close()
 plt.figure()
 plt.plot(rate,dist)
 plt.scatter(rate,dist)

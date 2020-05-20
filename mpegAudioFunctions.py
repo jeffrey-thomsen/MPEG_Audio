@@ -15,7 +15,6 @@ import numpy as np
 # print(end - start)
         
 
-
 #%% Implementation of the Analysis Polyphase filterbank
 """
 The Analysis Filterbank uses a buffer which is fed with blocks of input audio
@@ -43,7 +42,6 @@ def polyphaseFilterbank(x):
     assert (type(x)==analysisBuffer),"Input not an analysisBuffer object!"
     
     C = np.load('data/mpeg_analysis_window.npy') # analysis window defined by MPEG
-    #M = np.load('data/mpeg_polyphase_analysis_matrix_coeff.npy')  # analysis matrix coefficients defined by MPEG
 
     Z = C*x.bufferVal
     
@@ -54,7 +52,6 @@ def polyphaseFilterbank(x):
     
     subbandSamples = np.zeros(32)
     for n in range(32):
-        #subbandSamples[n] = np.sum(M[n,:] * Y)
         subbandSamples[n] = np.sum(mFun(n,np.arange(0,64)) * Y)
 
     return subbandSamples
@@ -83,7 +80,6 @@ def feedCoder(x):
     
     if stereo==1 or stereo==2:
         x  = x[:,0] # eventually will need to be xLeft/xRight and will need a whole routine to handle both channels
-        #xRight = x[:,1]
     
     # zero-pad to divisible of 32 samples
     modulo32 = nSamples%32
@@ -92,7 +88,6 @@ def feedCoder(x):
     x = np.zeros([nSamples+nPadding])
     x[0:nSamples] = xHold
     nSamples = nSamples+nPadding
-    #nBlocks = int(nSamples/32)
     assert (nSamples%32==0),"Zero-padding mistake!"
         
     xBuffer = analysisBuffer()
@@ -178,8 +173,8 @@ def codeScaleFactors(scaleFactorIndex):
 #%% Bit allocation
 """
 The bit allocation actually takes into account the output of the psychoacoustic
-model, but that's not implemented yet.
-Now, it takes a subbandFrame object, and through an iterative process it 
+model, but instead I have implemented an equivalent with equivSMR.
+It takes a subbandFrame object, and through an iterative process it 
 assigns a number of coding bits to each subband
 """
 
@@ -259,7 +254,6 @@ def updateMNR(nBitsSubband,scaleFactorVal):
         snrIndex = np.where(snrTable[:,0] == nBitsSubband[iBand])[0][0]
         SNR = snrTable[snrIndex,2]
         
-        #SMR = 0 # eventually determine this from psychoacoustic model
         SMR = equivSMR(scaleFactorVal[iBand])
         
         MNR[iBand] = SNR - SMR
@@ -269,8 +263,6 @@ def updateMNR(nBitsSubband,scaleFactorVal):
 # calculate SMR equivalent from scalefactor
 def equivSMR(scaleFactorVal):
     
-    #equivSMR = 0
-    #equivSMR = 1000*np.log10(scaleFactorVal+1)
     equivSMR = 20 * np.log10(scaleFactorVal * 32768) - 10
     
     return equivSMR
@@ -350,7 +342,6 @@ def quantizeSubbandFrame(subbandFrame,scaleFactorInd,nBitsSubband):
             quantizedBand = subbandQuantizer(normalizedBand,nBitsSubband[iBand])
             
             
-            #transmitSubband.append(codeSubband(quantizedBand,nBitsSubband[iBand]))
             transmitSubband.append(quantizedBand)
             
     
@@ -388,24 +379,6 @@ def subbandQuantizer(normalizedBand,nBits):
     return quantizedBand
 
 
-            
-    
-# convert scale factor indices into binary representation for coding
-# NOTE: right now no conversion to binary yet
-# def codeSubband(quantizedBand,nBits):
-#     assert (type(quantizedBand[0]==int)),"Input not integer value!"
-    
-#     codedSubband = []
-#     for iSample in range(len(quantizedBand)):
-#         print(quantizedBand[iSample])
-#         codedVal    = bin(quantizedBand[iSample]) # this should be an integer number but isn't???
-#         codedVal    = codedVal[0:nBits]
-#         codedVal[0] = ~codedVal[0]
-#         codedSubband.append()
-    
-#     return codedScaleFactor
-
-
 #%% Decoder
 
 """
@@ -435,7 +408,6 @@ class synthesisBuffer:
 
 # part of the synthesis filter process
 def synthesisMatrixing(sampleBlock):
-    #N = np.load('data/mpeg_polyphase_synthesis_matrix_coeff.npy')
     V = np.zeros(64)
     for n in range(64):
         V[n] = np.sum(nFun(n,np.arange(0,32))*sampleBlock)
@@ -451,6 +423,7 @@ def nFun(n,k):
 # analysis filterbank for MPEG Audio subband coding
 def synthesisFilterbank(x):
     # x - synthesisBuffer object
+    
     assert (type(x)==synthesisBuffer),"Input not a synthesisBuffer object!"
     
 
@@ -494,8 +467,6 @@ def decoder(transmitFrames):
     decodedSignal = np.array(decodedSignal)
     
     return decodedSignal
-
-
 
 
 #%% Miscellaneous
