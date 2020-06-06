@@ -28,7 +28,7 @@ specifies the number of bits available to code one frame, representing
 384 input samples
 """
 
-nTotalBits = 384 # 768 equals 2bps
+nTotalBits = 1536 # 768 equals 2bps
 
 #%% load audio
 """
@@ -41,13 +41,13 @@ x[0:44100,1] tot test the coder, as it is very slow
 # sampleRate, x=wav.read(filename)
 # x = np.expand_dims(x[:,1], axis = 1)
 
-filename = 'data/audio/traffic_audio.wav'
-sampleRate, x=wav.read(filename)
-# traffic: 0:573300
-x = np.expand_dims(x[0:88200,1], axis = 1)
-# x = np.expand_dims(x[0:573300,1], axis = 1)
-# x = np.expand_dims(x[:,1], axis = 1)
-# x = np.expand_dims(np.mean(x[0:573300,:], axis=1), axis = 1)
+# filename = 'data/audio/traffic_audio.wav'
+# sampleRate, x=wav.read(filename)
+# # traffic: 0:573300
+# x = np.expand_dims(x[0:88200,1], axis = 1)
+# # x = np.expand_dims(x[0:573300,1], axis = 1)
+# # x = np.expand_dims(x[:,1], axis = 1)
+# # x = np.expand_dims(np.mean(x[0:573300,:], axis=1), axis = 1)
 
 # filename = 'data/audio/nara_audio.wav'
 # sampleRate, x=wav.read(filename)
@@ -58,8 +58,13 @@ x = np.expand_dims(x[0:88200,1], axis = 1)
 
 # filename = 'data/audio/watermelonman_audio.wav'
 # sampleRate, x=wav.read(filename)
-# x = np.expand_dims(np.mean(x[20000:64100,:], axis=1), axis = 1)
-# x = np.expand_dims(np.mean( x[2593080:2637180,:], axis=1), axis = 1)
+# # x = np.expand_dims(np.mean(x[20000:64100,:], axis=1), axis = 1)
+# # x = np.expand_dims(np.mean( x[2593080:2637180,:], axis=1), axis = 1)
+# x = np.expand_dims(x[:,1], axis = 1)
+
+filename = 'data/audio/soulfinger_audio.wav'
+sampleRate, x=wav.read(filename)
+x = np.expand_dims(x[:,0], axis = 1)
 
 # filename = 'data/audio/fixingahole_audio.wav'
 # sampleRate, x=wav.read(filename)

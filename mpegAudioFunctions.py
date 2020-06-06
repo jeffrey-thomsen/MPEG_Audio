@@ -309,7 +309,7 @@ The quantizer takes a subbandFrame object, its corresponding scalefactors and
 bit assignments, divides each sample in the frame with the corresponding 
 scalefactor of the band and applies the quantization according to the number of
  bits allocated to each band. The quantized subband samples are then wrapped 
-in a transmiSubband object together with the other input data, quasi 
+in a transmitFrame object together with the other input data, quasi 
 representing a block of the formatted bitstream.
 
 """

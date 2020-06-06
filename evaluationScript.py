@@ -116,16 +116,33 @@ plt.ylabel('Power spectrum (dB)')
 
 #%% Rate-distortion plot
 
-rate = [0.5, 0.625, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 8.0]
-dist = [5.54, 10.49, 14.61, 18.03, 21.67, 25.10, 28.78, 32.41, 35.71, 38.63, 63.61]
+rate = [0.5,   0.625, 0.75,  1.0,   1.5,   2.0,   2.5,   3.0,   3.5,   4.0 ]# , 8.0]
+dist = [5.54, 10.49, 14.61, 18.03, 21.67, 25.10, 28.78, 32.41, 35.71, 38.63]#, 63.61]
+
+rate_nara = [0.5,  0.625, 0.75,  1.0,   1.5,   2.0,   3.0,   4.0]
+dist_nara = [5.07, 8.73, 11.76, 14.58, 18.36, 20.51, 24.45, 30.37]
+
+rate_wmm =  [0.5,  0.625, 0.75,  1.0,   1.5,   2.0,   3.0,   4.0]
+dist_wmm =  [5.06, 9.32, 12.81, 15.73, 18.91, 21.49, 28.87, 35.19]
+
+rate_soul = [0.5,  0.625, 0.75,  1.0,   1.5,   2.0,   3.0,   4.0]
+dist_soul = [3.62, 6.19,  8.18, 10.75, 15.68, 18.60, 23.09, 27.65]
 
 plt.figure()
-plt.plot(rate,dist)
+plt.plot(rate,dist,label='Cupid')
 plt.scatter(rate,dist)
+plt.plot(rate_nara,dist_nara,label='Nara')
+plt.scatter(rate_nara,dist_nara)
+plt.plot(rate_wmm,dist_wmm,label='Watermelon Man')
+plt.scatter(rate_wmm,dist_wmm)
+plt.plot(rate_soul,dist_soul,label='Soul Finger')
+plt.scatter(rate_soul,dist_soul)
 plt.xlabel('Rate (bits per sample)')
 plt.ylabel('SNR (dB)')
 plt.grid()
-plt.xticks(np.array([0.5, 1, 2,  3, 4, 8]),['0.5','1','2','3','4','8']) 
+plt.legend()
+#plt.xticks(np.array([0.5, 1, 2,  3, 4, 8]),['0.5','1','2','3','4','8']) 
+plt.xticks(np.array([0.5, 1, 2,  3, 4]),['0.5','1','2','3','4']) 
 
 #%% Entropy estimate
 
