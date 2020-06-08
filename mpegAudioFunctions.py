@@ -30,7 +30,7 @@ class analysisBuffer:
         assert (len(bufferVal)==512),"Input not length 512!"
         self.bufferVal = bufferVal
     
-    # by definition, 32 samples are pushed into the buffer at a time
+    # 32 samples are pushed into the buffer at a time
     def pushBlock(self,sampleBlock):
         assert (len(sampleBlock)==32),"Sample block length not 32!"
         self.bufferVal[32:] = self.bufferVal[:-32]
@@ -113,7 +113,7 @@ class subbandFrame:
         self.layer=layer
         if self.layer==1:
             self.nSamples = 12
-        elif self.layer ==2 or self.layer==3:
+        elif self.layer==2 or self.layer==3:
             self.nSamples = 36
         
         self.frame = np.zeros([32,self.nSamples])
@@ -208,17 +208,20 @@ def assignBits(subbandFrame,scaleFactorVal,nTotalBits):
     
     return nBitsSubband, nSplBits, nScfBits, nAvailableBits
 
+# given the current state, return the smallest increase in bits allocated
+# in a potential next iteration step
 def possibleIncreaseInBits(nBitsSubband):
     assert (len(nBitsSubband)==32),"Wrong length of input list!"
-    # given the current state, return the smallest increase in bits allocated
-    # in a potential next iteration step
+    assert (np.max(nBitsSubband)<16),"Too many bits allocated!"
     
-    if not not [i for i, e in enumerate(nBitsSubband) if 0<e<15]:
-        minIncrease = 12
-    elif not not [i for i, e in enumerate(nBitsSubband) if e == 0]:
+    if (np.min(nBitsSubband)==0):
         minIncrease = 30
+    elif (0<np.min(nBitsSubband)<15):
+        minIncrease = 12
     else:
-        minIncrease = 0
+        assert(np.min(nBitsSubband)==15),"possibleIncreaseInBits loop error!"
+        assert(np.max(nBitsSubband)==15),"possibleIncreaseInBits loop error!"
+        minIncrease = np.inf # to break the while loop when no more bits can be added
 
     return minIncrease
 
@@ -230,15 +233,19 @@ def determineMinimalMNR(nBitsSubband,scaleFactorVal,nAvailableBits):
     
     minMNRIndex = np.argmin(MNR)
     
+    # exclude bands with already 15 bits allocated to them
     while minMNRIndex in np.where(nBitsSubband == 15)[0]:
         MNR[minMNRIndex] = np.inf
         minMNRIndex = np.argmin(MNR)
     
+    # exclude bands with only 0 bits allocated to them, because they would need
+    # 30 bits instead of just 12 to increase the allocation
     if nAvailableBits<30:
         while minMNRIndex in np.where(nBitsSubband == 0)[0]:
             MNR[minMNRIndex] = np.inf
             minMNRIndex = np.argmin(MNR)
     
+
     return minMNRIndex
 
 # calculate MNR of all subbands
@@ -379,6 +386,58 @@ def subbandQuantizer(normalizedBand,nBits):
     return quantizedBand
 
 
+#%% Encoder
+
+"""
+The encoder stage combines the scale factor calculation, bit allocation and 
+quantization of the previously calculated subband samples by continously 
+pushing new subband samples into a subbandFrame object and performing the 
+operations. It outputs a list of transmitFrame objects which can then be read
+by the decoder.
+"""
+
+def encoder(subSamples,nTotalBits):
+    
+    # initialize and push subband samples into a subbandFrame object
+    subFrame = subbandFrame()
+    
+    transmitFrames=[]
+    
+    while len(subSamples)>=subFrame.nSamples:
+        
+        # push next 12 subband samples into the subbandFrame object
+        
+        subSamples = subFrame.pushFrame(subSamples)
+        
+        # calculate scalefactors for current frame
+        
+        #start = time.time()
+        scaleFactorVal, scaleFactorInd = calcScaleFactors(subFrame)
+        #end = time.time()
+        #print("scalefactor calculation in")
+        #print(end - start)
+        
+    
+        # bit allocation for current frame
+        
+        #start = time.time()
+        nBitsSubband, bscf, bspl, adb = assignBits(subFrame,scaleFactorVal,nTotalBits)
+        #end = time.time()
+        #print("bit allocation in")
+        #print(end - start)
+    
+    
+        # quantize subband samples of current frame and store in transmitFrame object
+        
+        #start = time.time()
+        transmit = quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband)
+        transmitFrames.append(transmit)
+        #end = time.time()
+        #print("quantization in")
+        #print(end - start)
+        
+    return transmitFrames
+
 #%% Decoder
 
 """
@@ -396,18 +455,15 @@ class synthesisBuffer:
         assert (len(bufferVal)==1024),"Input not length 1024!"
         self.bufferVal = bufferVal
     
-    # by definition, 1 subband sample with 32 bands is pushed into the buffer at a time
-    def pushBlock(self,decodedBands):
-        
+    # 1 subband sample with 32 bands is pushed into the buffer at a time
+    def pushBlock(self,decodedBand):
         self.bufferVal[64:] = self.bufferVal[:-64]
-        self.bufferVal[0:64] = synthesisMatrixing(decodedBands[0,:])
-        decodedBands = decodedBands[1:,:]   
-        return decodedBands
-
+        self.bufferVal[0:64] = synthesisMatrixing(decodedBand)
 
 
 # part of the synthesis filter process
 def synthesisMatrixing(sampleBlock):
+    assert (len(sampleBlock)==32),"Input not length 32!"
     V = np.zeros(64)
     for n in range(64):
         V[n] = np.sum(nFun(n,np.arange(0,32))*sampleBlock)
@@ -448,7 +504,8 @@ def decoder(transmitFrames):
     
     nFrames = len(transmitFrames)
     
-    decodedBands = np.zeros((nFrames*12,32))
+    nSubSamples = nFrames*12
+    decodedBands = np.zeros((nSubSamples,32))
     
     scaleFactorTable = np.load('data/mpeg_scale_factors.npy') # scale factors defined by MPEG
     
@@ -461,10 +518,13 @@ def decoder(transmitFrames):
     synBuff = synthesisBuffer()
     decodedSignal=[]
     
-    while decodedBands[:,0].size>0:
-        decodedBands = synBuff.pushBlock(decodedBands)
+    for iSubSample in range(nSubSamples):
+        synBuff.pushBlock(decodedBands[iSubSample,:])
         decodedSignal+= list(synthesisFilterbank(synBuff))
     decodedSignal = np.array(decodedSignal)
+
+    
+    
     
     return decodedSignal
 

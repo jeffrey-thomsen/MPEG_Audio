@@ -62,19 +62,19 @@ x[0:44100,1] tot test the coder, as it is very slow
 # # x = np.expand_dims(np.mean( x[2593080:2637180,:], axis=1), axis = 1)
 # x = np.expand_dims(x[:,1], axis = 1)
 
-filename = 'data/audio/soulfinger_audio.wav'
-sampleRate, x=wav.read(filename)
-x = np.expand_dims(x[:,0], axis = 1)
+# filename = 'data/audio/soulfinger_audio.wav'
+# sampleRate, x=wav.read(filename)
+# x = np.expand_dims(x[:,0], axis = 1)
 
 # filename = 'data/audio/fixingahole_audio.wav'
 # sampleRate, x=wav.read(filename)
 # x = np.expand_dims(np.mean(x[0:441000,:], axis=1), axis = 1)
 
-# filename = 'data/audio/smooth_audio.wav'
-# sampleRate, x=wav.read(filename)
-# # smooth: 176400:264600 9238950:9327150
-# # x = x[176400:264600,:]
-# x = np.expand_dims(np.mean(x[176400:264600,:], axis=1), axis = 1)
+filename = 'data/audio/smooth_audio.wav'
+sampleRate, x=wav.read(filename)
+# smooth: 176400:264600 9238950:9327150
+# x = x[176400:264600,:]
+x = np.expand_dims(np.mean(x[176400:264600,:], axis=1), axis = 1)
 
 
 #%% 
@@ -105,56 +105,19 @@ print(end - start)
 
 subSamplesArray=np.array(subSamples)
 
-#%% initialize and push subband samples into a subbandFrame object
+
+#%% Encoding
 
 start = time.time()
-
-subFrame = mpeg.subbandFrame()
-
-transmitFrames=[]
-
-while len(subSamples)>=12:
     
-    # push next 12 subband samples into the subbandFrame object
-    
-    subSamples = subFrame.pushFrame(subSamples)
-    
-    # calculate scalefactors for current frame
-    
-    #start = time.time()
-    scaleFactorVal, scaleFactorInd = mpeg.calcScaleFactors(subFrame)
-    #end = time.time()
-    #print("scalefactor calculation in")
-    #print(end - start)
-    
-
-    # bit allocation for current frame
-    
-    #start = time.time()
-    nBitsSubband, bscf, bspl, adb = mpeg.assignBits(subFrame,scaleFactorVal,nTotalBits)
-    #end = time.time()
-    #print("bit allocation in")
-    #print(end - start)
-
-
-    # quantize subband samples of current frame and store in transmitFrame object
-    
-    #start = time.time()
-    transmit = mpeg.quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband)
-    transmitFrames.append(transmit)
-    #end = time.time()
-    #print("quantization in")
-    #print(end - start)
-    
+transmitFrames = mpeg.encoder(subSamples,nTotalBits)
     
 end = time.time()
 print("scaling, bit allocation and quantizing in")
 print(end - start)
 
 
-
-
-# create matrix just for checking bit allocation
+#%% create matrix just for checking bit allocation
 nBitsAllocated = []
 scaleFactorInd = []
 quantSubbandSamples = np.zeros((len(transmitFrames)*12,32))
@@ -182,8 +145,6 @@ decodedSignal = mpeg.decoder(transmitFrames)
 end = time.time()
 print("Decoded signal in")
 print(end - start,"\n")
-
-
 
 
 """
