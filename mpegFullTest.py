@@ -94,7 +94,6 @@ into three parts of time-to-frequency mapping, bit allocation/quantizing and
 decoding (i.e. frequency-to-time mapping)
 """
 #%% calculate polyphase filterbank output
-
 start = time.time()
 
 subSamples = mpeg.feedCoder(x)
@@ -155,7 +154,11 @@ The following lines represent the evaluation stage used for the project report
 # rate-distortion
 
 # mean squared error
-mse = np.mean((x[0:len(decodedSignal)-481,0]-decodedSignal[481:])**2)
+
+if ((len(decodedSignal)-len(x)-481)>0):
+    mse = np.mean((x[0:len(decodedSignal)-481,0]-decodedSignal[481:-(len(decodedSignal)-len(x)-481)])**2)
+else:
+    mse = np.mean((x[0:len(decodedSignal)-481,0]-decodedSignal[481:])**2)
 print("MSE =",mse)
 
 # avg. squared value of output
@@ -239,48 +242,48 @@ print("< H(X) <")
 print("Ideal adaptive code length =",iacl,"\n")
 
 
-#%% Comparison plots
+# #%% Comparison plots
 
-# power spectra
-f, Px = scisig.welch(x[0:len(decodedSignal)-481,0], fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
-f, Py = scisig.welch(decodedSignal[481:],           fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
+# # power spectra
+# f, Px = scisig.welch(x[0:len(decodedSignal)-481,0], fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
+# f, Py = scisig.welch(decodedSignal[481:],           fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
 
-fig, axes = plt.subplots(2, 2, figsize=(10, 7))
+# fig, axes = plt.subplots(2, 2, figsize=(10, 7))
 
-axes[0, 0].set_title('time signal squared error')
-axes[0, 0].plot((x[0:len(decodedSignal)-481,0]-decodedSignal[481:])**2)
-axes[0, 0].grid(axis='x')
+# axes[0, 0].set_title('time signal squared error')
+# axes[0, 0].plot((x[0:len(decodedSignal)-481,0]-decodedSignal[481:])**2)
+# axes[0, 0].grid(axis='x')
 
-axes[0, 1].set_title('spectral error (absolute difference, max-normalized)')
-axes[0, 1].plot(f,np.abs(Px-Py)/np.max(Px))
-axes[0, 1].set_xscale('log')
-axes[0, 1].grid(b=True,which='both')
-axes[0, 1].set_xlim((10, 20000))
+# axes[0, 1].set_title('spectral error (absolute difference, max-normalized)')
+# axes[0, 1].plot(f,np.abs(Px-Py)/np.max(Px))
+# axes[0, 1].set_xscale('log')
+# axes[0, 1].grid(b=True,which='both')
+# axes[0, 1].set_xlim((10, 20000))
 
-axes[1, 0].set_title('spectral error (ratio in dB)')
-axes[1, 0].plot(f,10*np.log10(Py/Px))
-axes[1, 0].set_xscale('log')
-axes[1, 0].grid(b=True,which='both')
-axes[1, 0].set_xlim((10, 20000))
+# axes[1, 0].set_title('spectral error (ratio in dB)')
+# axes[1, 0].plot(f,10*np.log10(Py/Px))
+# axes[1, 0].set_xscale('log')
+# axes[1, 0].grid(b=True,which='both')
+# axes[1, 0].set_xlim((10, 20000))
 
-axes[1, 1].set_title('spectral comparison in dB')
-axes[1, 1].plot(f,10*np.log10(Px))
-axes[1, 1].plot(f,10*np.log10(Py))
-axes[1, 1].set_xscale('log')
-axes[1, 1].grid(b=True,which='both')
-axes[1, 1].set_xlim((10, 20000))
+# axes[1, 1].set_title('spectral comparison in dB')
+# axes[1, 1].plot(f,10*np.log10(Px))
+# axes[1, 1].plot(f,10*np.log10(Py))
+# axes[1, 1].set_xscale('log')
+# axes[1, 1].grid(b=True,which='both')
+# axes[1, 1].set_xlim((10, 20000))
 
-#%% save audio files
+# #%% save audio files
 
-# bring data back into int16 format
-xInt = np.round(x[:,0]*32768).astype(np.int16)
-decodedInt=np.round(decodedSignal[480:]*32768).astype(np.int16)
+# # bring data back into int16 format
+# xInt = np.round(x[:,0]*32768).astype(np.int16)
+# decodedInt=np.round(decodedSignal[480:]*32768).astype(np.int16)
 
-wav.write('test_source.wav', 44100, xInt)
-wav.write('test_recons.wav', 44100, decodedInt)
+# wav.write('test_source.wav', 44100, xInt)
+# wav.write('test_recons.wav', 44100, decodedInt)
 
 
-#%% misc. for evaluation
+# #%% misc. for evaluation
 
-scaleFactorIndArray=np.array(scaleFactorInd)
-nBitsAllocatedArray=np.array(nBitsAllocated)
+# scaleFactorIndArray=np.array(scaleFactorInd)
+# nBitsAllocatedArray=np.array(nBitsAllocated)
