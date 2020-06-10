@@ -6,6 +6,8 @@ Created on Tue Apr 14 14:11:24 2020
 """
 import numpy as np
 
+import mpegAudioPsyAcMod as pam
+
 # to time stuff:
 #import time
 # start = time.time()
