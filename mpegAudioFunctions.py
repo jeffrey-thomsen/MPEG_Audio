@@ -286,12 +286,14 @@ def updateMNR(nBitsSubband,scaleFactorVal):
     MNR = np.zeros(32)
     nBands = 32
     
+    SMR = PsyMod(signal,scaleFactorVal,layer,sampleRate,bitrate)
+    
     for iBand in range(nBands):
         assert (nBitsSubband[iBand]<16),"Too many bits assigned!"
         snrIndex = np.where(snrTable[:,0] == nBitsSubband[iBand])[0][0]
         SNR = snrTable[snrIndex,2]
         
-        SMR = equivSMR(scaleFactorVal[iBand])
+        #SMR = equivSMR(scaleFactorVal[iBand])
         
         MNR[iBand] = SNR - SMR
         
