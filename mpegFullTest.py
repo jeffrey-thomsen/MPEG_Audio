@@ -49,11 +49,11 @@ x[0:44100,1] tot test the coder, as it is very slow
 # # x = np.expand_dims(x[:,1], axis = 1)
 # # x = np.expand_dims(np.mean(x[0:573300,:], axis=1), axis = 1)
 
-# filename = 'data/audio/nara_audio.wav'
-# sampleRate, x=wav.read(filename)
-# # nara: 9238950:9327150
-# # x = np.expand_dims(np.mean(x, axis=1), axis = 1)
-# # x = np.expand_dims(np.mean(x[9238950:9327150,:], axis=1), axis = 1)
+filename = 'data/audio/nara_audio.wav'
+sampleRate, x=wav.read(filename)
+# nara: 9238950:9327150
+# x = np.expand_dims(np.mean(x, axis=1), axis = 1)
+x = np.expand_dims(np.mean(x[9238950:9327150,:], axis=1), axis = 1)
 # x = np.expand_dims(x[:,1], axis = 1)
 
 # filename = 'data/audio/watermelonman_audio.wav'
@@ -70,11 +70,17 @@ x[0:44100,1] tot test the coder, as it is very slow
 # sampleRate, x=wav.read(filename)
 # x = np.expand_dims(np.mean(x[0:441000,:], axis=1), axis = 1)
 
-filename = 'data/audio/smooth_audio.wav'
-sampleRate, x=wav.read(filename)
-# smooth: 176400:264600 9238950:9327150
-# x = x[176400:264600,:]
-x = np.expand_dims(np.mean(x[176400:264600,:], axis=1), axis = 1)
+# filename = 'data/audio/smooth_audio.wav'
+# sampleRate, x=wav.read(filename)
+# # smooth: 176400:264600 9238950:9327150
+# # x = x[176400:264600,:]
+# x = np.expand_dims(np.mean(x[176400:264600,:], axis=1), axis = 1)
+
+# filename = 'data/audio/tomsdiner_audio.wav'
+# sampleRate, x=wav.read(filename)
+# # smooth: 176400:264600 9238950:9327150
+# # x = x[176400:264600,:]
+# x = np.expand_dims(np.mean(x[19200:107400,:], axis=1), axis = 1)
 
 
 #%% 
@@ -109,7 +115,7 @@ subSamplesArray=np.array(subSamples)
 
 start = time.time()
     
-transmitFrames = mpeg.encoder(subSamples,nTotalBits)
+transmitFrames = mpeg.encoder(subSamples,nTotalBits,x,sampleRate)
     
 end = time.time()
 print("scaling, bit allocation and quantizing in")
@@ -273,17 +279,19 @@ print("Ideal adaptive code length =",iacl,"\n")
 # axes[1, 1].grid(b=True,which='both')
 # axes[1, 1].set_xlim((10, 20000))
 
-# #%% save audio files
+#%% save audio files
 
-# # bring data back into int16 format
-# xInt = np.round(x[:,0]*32768).astype(np.int16)
-# decodedInt=np.round(decodedSignal[480:]*32768).astype(np.int16)
+# bring data back into int16 format
+xInt = np.round(x[:,0]*32768).astype(np.int16)
+decodedInt=np.round(decodedSignal[480:]*32768).astype(np.int16)
 
-# wav.write('test_source.wav', 44100, xInt)
-# wav.write('test_recons.wav', 44100, decodedInt)
+wav.write('test_source.wav', 44100, xInt)
+wav.write('test_recons.wav', 44100, decodedInt)
 
 
-# #%% misc. for evaluation
+#%% misc. for evaluation
 
 # scaleFactorIndArray=np.array(scaleFactorInd)
-# nBitsAllocatedArray=np.array(nBitsAllocated)
+nBitsAllocatedArray=np.array(nBitsAllocated)
+plt.figure()
+plt.imshow(nBitsAllocatedArray)

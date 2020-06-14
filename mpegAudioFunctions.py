@@ -94,8 +94,8 @@ def feedCoder(x):
     # Input:
     # x - mono or stereo PCM audio signal samples as array
     # Output:
-    # subbandSamples - list of numpy arrays of length 32, one array for each 
-    #                  subband sample corresponding to 32 input samples
+    # subbandSamples - array of size 32xnBlocks, each column containing a
+    #                  subband sample representing 32 input samples
     
     nSamples,stereo=x.shape
     assert (stereo==0 or stereo==1 or stereo==2),"Input not mono or stereo!"
@@ -124,6 +124,8 @@ def feedCoder(x):
         xBuffer.pushBlock(x[iSample:iSample+32])
         subbandSamples[:,iBlock] = polyphaseFilterbank(xBuffer)
         iSample += 32  
+    
+    
     
     return subbandSamples
 
@@ -210,7 +212,7 @@ assigns a number of coding bits to each subband
 
 # main function for bit allocation that calculates the number of bits to be
 # assigned to each subband of a frame of subband samples
-def assignBits(scaleFactorVal,nTotalBits,nMiscBits,frameSize):
+def assignBits(scaleFactorVal,nTotalBits,nMiscBits,frameSize,psyModFrame,layer,sampleRate,bitrate):
     # Input:
     # scaleFactorVal - an array containing the scale factors for each subband
     # nTotalBits - number of bits to be allocated to this frame
@@ -223,9 +225,16 @@ def assignBits(scaleFactorVal,nTotalBits,nMiscBits,frameSize):
     
     nBitsSubband = np.zeros(32,dtype=int)
 
+    # SMR calculation
+    if len(psyModFrame)==512:
+        SMR = pam.PsyMod(psyModFrame,scaleFactorVal,layer,sampleRate,bitrate)
+    else:
+        SMR = np.zeros(32)
+
+    # iterative bit allocation
     while (nAvailableBits >= possibleIncreaseInBits(nBitsSubband)):
         
-        minSubBand = determineMinimalMNR(nBitsSubband,scaleFactorVal,nAvailableBits)
+        minSubBand = determineMinimalMNR(nBitsSubband,scaleFactorVal,nAvailableBits,SMR)
         
         #nBitsSubband = increaseNBits(nBitsSubband,minSubBand)
         #nScfBits, nSplBits = updateBitAllocation(nBitsSubband)
@@ -256,10 +265,10 @@ def possibleIncreaseInBits(nBitsSubband):
     return minIncrease
 
 # compare MNRs of each subband and return first subband with lowest MNR
-def determineMinimalMNR(nBitsSubband,scaleFactorVal,nAvailableBits):
+def determineMinimalMNR(nBitsSubband,scaleFactorVal,nAvailableBits,SMR):
     assert (len(nBitsSubband)==32),"Wrong length of input list!"
     
-    MNR = updateMNR(nBitsSubband,scaleFactorVal)
+    MNR = updateMNR(nBitsSubband,SMR,scaleFactorVal)
     
     minMNRIndex = np.argmin(MNR)
     
@@ -279,23 +288,20 @@ def determineMinimalMNR(nBitsSubband,scaleFactorVal,nAvailableBits):
     return minMNRIndex
 
 # calculate MNR of all subbands
-def updateMNR(nBitsSubband,scaleFactorVal):
-    
+def updateMNR(nBitsSubband,SMR,scaleFactorVal):
     
     SNR = np.zeros(32)
     MNR = np.zeros(32)
     nBands = 32
     
-    SMR = PsyMod(signal,scaleFactorVal,layer,sampleRate,bitrate)
-    
     for iBand in range(nBands):
         assert (nBitsSubband[iBand]<16),"Too many bits assigned!"
         snrIndex = np.where(snrTable[:,0] == nBitsSubband[iBand])[0][0]
-        SNR = snrTable[snrIndex,2]
+        SNR[iBand] = snrTable[snrIndex,2]
         
-        #SMR = equivSMR(scaleFactorVal[iBand])
+        #SMR[iBand] = equivSMR(scaleFactorVal[iBand])
         
-        MNR[iBand] = SNR - SMR
+    MNR = SNR - SMR
         
     return MNR
 
@@ -451,7 +457,7 @@ operations. It outputs a list of transmitFrame objects which can then be read
 by the decoder.
 """
 
-def encoder(subSamples,nTotalBits):
+def encoder(subSamples,nTotalBits,x,sampleRate):
     # Input:
     # subSamples - array or list of subband samples calculated from the
     #              analysis polyphase filterbank
@@ -467,6 +473,9 @@ def encoder(subSamples,nTotalBits):
     
     nFrames = int(subSamples.shape[1]/subFrame.nSamples)
     iSubSample = 0
+    iAudioSample = 0
+    
+    bitrate = nTotalBits/384*sampleRate/1000
     
     # preallocate for bit allocation
     nHeaderBits   =   32 # bits needed for header
@@ -483,6 +492,14 @@ def encoder(subSamples,nTotalBits):
         subFrame.pushFrame(subSamples[:,iSubSample:iSubSample+subFrame.nSamples])
         iSubSample += subFrame.nSamples
         
+        
+        # grab next 512/1024 audio samples for psychoacoustic model
+        
+        iPsyModSample = iAudioSample-256-64
+        psyModFrame = x[iPsyModSample:iPsyModSample+512]
+        
+        iAudioSample += 32*subFrame.nSamples
+        
         # calculate scalefactors for current frame
         
         #start = time.time()
@@ -495,7 +512,7 @@ def encoder(subSamples,nTotalBits):
         # bit allocation for current frame
         
         #start = time.time()        
-        nBitsSubband = assignBits(scaleFactorVal,nTotalBits,nMiscBits,subFrame.nSamples)
+        nBitsSubband = assignBits(scaleFactorVal,nTotalBits,nMiscBits,subFrame.nSamples,psyModFrame,subFrame.layer,sampleRate,bitrate)
         #end = time.time()
         #print("bit allocation in")
         #print(end - start)
