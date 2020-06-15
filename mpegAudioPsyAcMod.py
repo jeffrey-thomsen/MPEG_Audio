@@ -34,7 +34,7 @@ signal = signal/32768
 
 #%% function for Step 4
 
-def find_nearest(array, value):
+def findNearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return idx
@@ -192,7 +192,7 @@ def PsyMod(signal,scaleFactorVal,layer,sampleRate,bitrate):
         Lk[LtonalInd] = -np.inf
         Lk[LtonalInd+1] = -np.inf
     
-    LtonalList= Ltonal[np.nonzero(Ltonal)]
+    LtonalList = Ltonal[np.nonzero(Ltonal)]
 
     
     # sum remaining non-tonal components
@@ -207,9 +207,9 @@ def PsyMod(signal,scaleFactorVal,layer,sampleRate,bitrate):
     
     
     LnoiseInd = np.zeros(len(critBandsCutoff),dtype=int)
-    LnoiseInd[0] = find_nearest(XFreq, np.sqrt(1*critBandsCutoff[0]))
+    LnoiseInd[0] = findNearest(XFreq, np.sqrt(1*critBandsCutoff[0]))
     for i in range(1,len(critBandsCutoff)):
-        LnoiseInd[i] = find_nearest(XFreq, np.sqrt(critBandsCutoff[i]*critBandsCutoff[i-1]))
+        LnoiseInd[i] = findNearest(XFreq, np.sqrt(critBandsCutoff[i]*critBandsCutoff[i-1]))
     
     for iFreq in range(len(XFreq)):
         cbands[iFreq]=np.argmax(XFreq[iFreq]<=critBandsCutoff)
@@ -229,11 +229,11 @@ def PsyMod(signal,scaleFactorVal,layer,sampleRate,bitrate):
     # map tonal and noise spectral values to subsampled frequency indices
     # and remove values smaller than theshold in quiet LTq
     for i in range(len(LtonalInd)):
-        LtonalInd[i] = find_nearest(LTqFreq, XFreq[LtonalInd[i]])    
+        LtonalInd[i] = findNearest(LTqFreq, XFreq[LtonalInd[i]])    
         if LtonalList[i]<LTq[LtonalInd[i]]:
             LtonalList[i] = 0
     for i in range(len(LnoiseInd)):
-        LnoiseInd[i] = find_nearest(LTqFreq, XFreq[LnoiseInd[i]])
+        LnoiseInd[i] = findNearest(LTqFreq, XFreq[LnoiseInd[i]])
         if LnoiseList[i]<LTq[LnoiseInd[i]]:
             LnoiseList[i] = 0
       
@@ -266,10 +266,11 @@ def PsyMod(signal,scaleFactorVal,layer,sampleRate,bitrate):
             LTtm[j,i] = LtonalList[j] + avtm(LTqBark[LtonalInd[j]]) + vf((LTqBark[i]-LTqBark[LtonalInd[j]]), LtonalList[j] )
             if np.isnan(LTtm[j,i]):
                 print('LTtm',j,i)
+                
     LTnm = np.zeros((len(LnoiseInd),len(LTq)))
     for j in range(len(LnoiseInd)):
         for i in range(len(LTq)):
-            LTnm[j,i] = LnoiseList[j] + avtm(LTqBark[LnoiseInd[j]]) + vf((LTqBark[i]-LTqBark[LnoiseInd[j]]), LnoiseList[j] )
+            LTnm[j,i] = LnoiseList[j] + avnm(LTqBark[LnoiseInd[j]]) + vf((LTqBark[i]-LTqBark[LnoiseInd[j]]), LnoiseList[j] )
             if np.isnan(LTnm[j,i]):
                 print('LTnm',j,i)
     
@@ -289,13 +290,13 @@ def PsyMod(signal,scaleFactorVal,layer,sampleRate,bitrate):
     # determine minimum masking threshold per subband
     LTmin = np.zeros(32)
     for iBand in range(max(subbandsMask)):
-        LTmin[iBand] = max(LTg[subbandsMask==iBand])
+        LTmin[iBand] = min(LTg[subbandsMask==iBand])
     
     # added this to avoid unnecessarily high SMRs at bands above the defined range
     LTmin[max(subbandsMask):]=LTmin[max(subbandsMask)-1]
     
     #%% Step 9: Calculation of the signal-to-mask-ratio
-    
+
     SMR = Lsb - LTmin
     
     return SMR

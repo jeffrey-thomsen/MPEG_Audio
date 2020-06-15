@@ -28,7 +28,11 @@ specifies the number of bits available to code one frame, representing
 384 input samples
 """
 
-nTotalBits = 1536 # 768 equals 2bps
+nTotalBits = 3072 # 768 equals 2bps
+
+
+smrModel = 'scf' #'psy' 'scf' 'spl'
+Aweighting = False
 
 #%% load audio
 """
@@ -60,7 +64,8 @@ x = np.expand_dims(np.mean(x[9238950:9327150,:], axis=1), axis = 1)
 # sampleRate, x=wav.read(filename)
 # # x = np.expand_dims(np.mean(x[20000:64100,:], axis=1), axis = 1)
 # # x = np.expand_dims(np.mean( x[2593080:2637180,:], axis=1), axis = 1)
-# x = np.expand_dims(x[:,1], axis = 1)
+# x = np.expand_dims(np.mean( x[2593080:2681280,:], axis=1), axis = 1)
+# # x = np.expand_dims(x[:,1], axis = 1)
 
 # filename = 'data/audio/soulfinger_audio.wav'
 # sampleRate, x=wav.read(filename)
@@ -78,9 +83,8 @@ x = np.expand_dims(np.mean(x[9238950:9327150,:], axis=1), axis = 1)
 
 # filename = 'data/audio/tomsdiner_audio.wav'
 # sampleRate, x=wav.read(filename)
-# # smooth: 176400:264600 9238950:9327150
 # # x = x[176400:264600,:]
-# x = np.expand_dims(np.mean(x[19200:107400,:], axis=1), axis = 1)
+# x = np.expand_dims(np.mean(x[44100:136170,:], axis=1), axis = 1)
 
 
 #%% 
@@ -108,14 +112,11 @@ end = time.time()
 print("Subband samples calculated in")
 print(end - start)
 
-subSamplesArray=np.array(subSamples)
-
-
 #%% Encoding
 
 start = time.time()
     
-transmitFrames = mpeg.encoder(subSamples,nTotalBits,x,sampleRate)
+transmitFrames = mpeg.encoder(subSamples,nTotalBits,x,sampleRate,smrModel,Aweighting)
     
 end = time.time()
 print("scaling, bit allocation and quantizing in")
@@ -248,36 +249,36 @@ print("< H(X) <")
 print("Ideal adaptive code length =",iacl,"\n")
 
 
-# #%% Comparison plots
+#%% Comparison plots
 
-# # power spectra
-# f, Px = scisig.welch(x[0:len(decodedSignal)-481,0], fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
-# f, Py = scisig.welch(decodedSignal[481:],           fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
+# power spectra
+f, Px = scisig.welch(x[0:len(decodedSignal)-481,0], fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
+f, Py = scisig.welch(decodedSignal[481:],           fs=sampleRate, window='hamming', nperseg=4096, noverlap=None, nfft=None, detrend='constant', return_onesided=True, scaling='spectrum', axis=-1)
 
-# fig, axes = plt.subplots(2, 2, figsize=(10, 7))
+fig, axes = plt.subplots(2, 2, figsize=(10, 7))
 
-# axes[0, 0].set_title('time signal squared error')
-# axes[0, 0].plot((x[0:len(decodedSignal)-481,0]-decodedSignal[481:])**2)
-# axes[0, 0].grid(axis='x')
+#axes[0, 0].set_title('time signal squared error')
+#axes[0, 0].plot((x[0:len(decodedSignal)-481,0]-decodedSignal[481:])**2)
+axes[0, 0].grid(axis='x')
+#
+axes[0, 1].set_title('spectral error (absolute difference, max-normalized)')
+axes[0, 1].plot(f,np.abs(Px-Py)/np.max(Px))
+axes[0, 1].set_xscale('log')
+axes[0, 1].grid(b=True,which='both')
+axes[0, 1].set_xlim((10, 20000))
 
-# axes[0, 1].set_title('spectral error (absolute difference, max-normalized)')
-# axes[0, 1].plot(f,np.abs(Px-Py)/np.max(Px))
-# axes[0, 1].set_xscale('log')
-# axes[0, 1].grid(b=True,which='both')
-# axes[0, 1].set_xlim((10, 20000))
+axes[1, 0].set_title('spectral error (ratio in dB)')
+axes[1, 0].plot(f,10*np.log10(Py/Px))
+axes[1, 0].set_xscale('log')
+axes[1, 0].grid(b=True,which='both')
+axes[1, 0].set_xlim((10, 20000))
 
-# axes[1, 0].set_title('spectral error (ratio in dB)')
-# axes[1, 0].plot(f,10*np.log10(Py/Px))
-# axes[1, 0].set_xscale('log')
-# axes[1, 0].grid(b=True,which='both')
-# axes[1, 0].set_xlim((10, 20000))
-
-# axes[1, 1].set_title('spectral comparison in dB')
-# axes[1, 1].plot(f,10*np.log10(Px))
-# axes[1, 1].plot(f,10*np.log10(Py))
-# axes[1, 1].set_xscale('log')
-# axes[1, 1].grid(b=True,which='both')
-# axes[1, 1].set_xlim((10, 20000))
+axes[1, 1].set_title('spectral comparison in dB')
+axes[1, 1].plot(f,10*np.log10(Px))
+axes[1, 1].plot(f,10*np.log10(Py))
+axes[1, 1].set_xscale('log')
+axes[1, 1].grid(b=True,which='both')
+axes[1, 1].set_xlim((10, 20000))
 
 #%% save audio files
 
@@ -294,4 +295,5 @@ wav.write('test_recons.wav', 44100, decodedInt)
 # scaleFactorIndArray=np.array(scaleFactorInd)
 nBitsAllocatedArray=np.array(nBitsAllocated)
 plt.figure()
-plt.imshow(nBitsAllocatedArray)
+plt.imshow(np.transpose(nBitsAllocatedArray))
+plt.colorbar()
