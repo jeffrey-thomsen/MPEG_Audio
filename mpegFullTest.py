@@ -114,6 +114,8 @@ print(end - start)
 
 #%% Encoding
 
+import mpegAudioFunctions as mpeg
+
 start = time.time()
     
 transmitFrames = mpeg.encoder(subSamples,nTotalBits,x,sampleRate,smrModel,Aweighting)
