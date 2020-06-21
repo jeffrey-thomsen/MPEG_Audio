@@ -14,13 +14,13 @@ import scipy.signal.windows as windowfun
 VERY IMPORTANT I STILL NEED TO GET THE CORRECT TIME SHIFTING IN HERE TO MATCH
 THE SUBBAND FRAMES
 """
-layer=1
+# layer=1
 
-scaleFactorVal = np.ones(32)*0.015625
+# scaleFactorVal = np.ones(32)*0.015625
 
-sampleRate = 44100
+# sampleRate = 44100
 
-bitrate = 128
+# bitrate = 128
 
 #signal = np.transpose(np.array([np.sin(2*np.pi*9470*np.linspace(0,2,88201))]))
 #signal = np.transpose(np.array([np.sin(2*np.pi*9470*np.linspace(0,2,88201))+np.sin(2*np.pi*947*np.linspace(0,2,88201))+np.sin(2*np.pi*200*np.linspace(0,2,88201))]))
@@ -83,7 +83,7 @@ def PsyMod(signal,scaleFactorVal,layer,sampleRate,bitrate):
     
     hannWindow = windowfun.hann(winLen,False)
     
-    signal = hannWindow * signal[0:512,0]
+    signal = hannWindow * signal[0:winLen,0]
     X = fft.rfft(signal)
     XFreq = fft.rfftfreq(winLen, d=1./sampleRate)
     
@@ -115,7 +115,7 @@ def PsyMod(signal,scaleFactorVal,layer,sampleRate,bitrate):
         """
         NEED TO PICK MAX OF THREE SCALEFACTORS PER FRAME
         """
-        Lscf = 20 * np.log10(scaleFactorVal * 32768) - 10
+        Lscf = 20 * np.log10(np.max(scaleFactorVal,axis=1) * 32768) - 10
     
     # max operation to compare which is bigger and use that as SPL value
     Lsb = np.zeros(32)

@@ -98,9 +98,9 @@ specifies the number of bits available to code one frame, representing
 """
 
 layer = 2 # 1, 2  
-bitrate = 256
-smrModel = 'scf' #'psy' 'scf' 'spl'
-Aweighting = False
+bitrate = 64
+smrModel = 'scf' #'psy' 'scf' 'spl' 'zero'
+Aweighting = True
 
 
 if layer==1:
