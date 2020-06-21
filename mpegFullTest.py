@@ -9,7 +9,7 @@ Created on Tue Apr 14 14:31:56 2020
 Test script for testing my MPEG Audio coder
 """
 
-import mpegAudioFunctions as mpeg
+
 
 import scipy.io.wavfile as wav
 
@@ -21,18 +21,10 @@ import time
 
 import matplotlib.pyplot as plt
 
-#%% define bitrate
-"""
-The bitrate is the quality control parameter of this coder. The number
-specifies the number of bits available to code one frame, representing
-384 input samples
-"""
 
-nTotalBits = 3072 # 768 equals 2bps
-
-
-smrModel = 'scf' #'psy' 'scf' 'spl'
-Aweighting = False
+global layer
+global bitrate
+global sampleRate
 
 #%% load audio
 """
@@ -98,6 +90,41 @@ x = x/32768
 # x = np.transpose(np.array([2*(0.5-np.random.uniform(size=22050))]))
 
 
+#%% define bitrate
+"""
+The bitrate is the quality control parameter of this coder. The number
+specifies the number of bits available to code one frame, representing
+384 input samples
+"""
+
+layer = 2 # 1, 2  
+bitrate = 256
+smrModel = 'scf' #'psy' 'scf' 'spl'
+Aweighting = False
+
+
+if layer==1:
+    bpf = 384
+    frameLength = 12
+elif layer==2:
+    bpf = 1152
+    frameLength = 36
+nTotalBits = int(np.floor(bitrate*1000/sampleRate*bpf))
+#nTotalBits = 3072 # 768 equals 2bps
+
+file = open("layer", "wb")
+np.save(file, layer)
+file.close
+file = open("bitrate", "wb")
+np.save(file, bitrate)
+file.close
+file = open("sampleRate", "wb")
+np.save(file, sampleRate)
+file.close
+
+import mpegAudioFunctions as mpeg
+#%%
+
 """
 The following lines represent the encoding and decoding process, divided up
 into three parts of time-to-frequency mapping, bit allocation/quantizing and
@@ -114,8 +141,6 @@ print(end - start)
 
 #%% Encoding
 
-import mpegAudioFunctions as mpeg
-
 start = time.time()
     
 transmitFrames = mpeg.encoder(subSamples,nTotalBits,x,sampleRate,smrModel,Aweighting)
@@ -128,8 +153,8 @@ print(end - start)
 #%% create matrix just for checking bit allocation
 nBitsAllocated = []
 scaleFactorInd = []
-quantSubbandSamples = np.zeros((len(transmitFrames)*12,32))
-rescaledSubSamples = np.zeros((len(transmitFrames)*12,32))
+quantSubbandSamples = np.zeros((len(transmitFrames)*frameLength,32))
+rescaledSubSamples = np.zeros((len(transmitFrames)*frameLength,32))
 
 scaleFactorTable = np.load('data/mpeg_scale_factors.npy') # scale factors defined by MPEG
 
@@ -138,10 +163,11 @@ for iFrame in range(len(transmitFrames)):
     scaleFactorInd.append(transmitFrames[iFrame].scalefactorInd)
     
     for iSubband in range(len(transmitFrames[iFrame].nSubbands)):
-       quantSubbandSamples[12*iFrame:12*iFrame+12,transmitFrames[iFrame].nSubbands[iSubband]] = np.array(transmitFrames[iFrame].quantSubbandSamples)[iSubband]
-       rescaledSubSamples[12*iFrame:12*iFrame+12,transmitFrames[iFrame].nSubbands[iSubband]]  = np.array(transmitFrames[iFrame].quantSubbandSamples)[iSubband]*scaleFactorTable[transmitFrames[iFrame].scalefactorInd[iSubband]]
+       quantSubbandSamples[frameLength*iFrame:frameLength*iFrame+frameLength,transmitFrames[iFrame].nSubbands[iSubband]] = np.array(transmitFrames[iFrame].quantSubbandSamples)[iSubband]
+       #rescaledSubSamples[frameLength*iFrame:frameLength*iFrame+frameLength,transmitFrames[iFrame].nSubbands[iSubband]]  = np.array(transmitFrames[iFrame].quantSubbandSamples)[iSubband]*scaleFactorTable[transmitFrames[iFrame].scalefactorInd[iSubband]]
      
 scaleFactorInd = [item for sublist in scaleFactorInd for item in sublist]
+scaleFactorInd = np.array(scaleFactorInd).flatten()
 
 
 #%% Decoding

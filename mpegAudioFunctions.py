@@ -8,6 +8,8 @@ import numpy as np
 
 import mpegAudioPsyAcMod as pam
 
+
+
 # to time stuff:
 #import time
 # start = time.time()
@@ -17,6 +19,17 @@ import mpegAudioPsyAcMod as pam
 # print(end - start)
         
 #%% Load windows and look-up-tables defined in MPEG standard
+
+global layer
+global bitrate
+global sampleRate
+file = open("layer", "rb")
+layer = np.load(file)
+file = open("bitrate", "rb")
+bitrate = np.load(file)
+file = open("sampleRate", "rb")
+sampleRate = np.load(file)
+
 
 global C
 global M
@@ -31,13 +44,30 @@ global N
 C = np.load('data/mpeg_analysis_window.npy') # analysis window defined by MPEG
 M = np.load('data/mpeg_polyphase_analysis_matrix_coeff.npy') # analysis filterbank matrix pre-calculated
 scaleFactorTable = np.load('data/mpeg_scale_factors.npy') # scale factors defined by MPEG
-snrTable = np.load('data/mpeg_snr_layer_i.npy') # SNR levels defined by MPEG
-A = np.load('data/mpeg_qc_layer_i_A.npy') # quantization coefficients defined by MPEG
-B = np.load('data/mpeg_qc_layer_i_B.npy') # quantization coefficients defined by MPEG
-nQuantSteps = np.load('data/mpeg_qc_layer_i_nSteps.npy') # number of quantization steps defined by MPEG
 D = np.load('data/mpeg_synthesis_window.npy') # synthesis window defined by MPEG
 N = np.load('data/mpeg_polyphase_synthesis_matrix_coeff.npy') # synthesis filterbank matrix pre-calculated
 
+if layer == 1:
+    snrTable = np.load('data/mpeg_snr_layer_i.npy') # SNR levels defined by MPEG
+    A = np.load('data/mpeg_qc_layer_i_A.npy') # quantization coefficients defined by MPEG
+    B = np.load('data/mpeg_qc_layer_i_B.npy') # quantization coefficients defined by MPEG
+    nQuantSteps = np.load('data/mpeg_qc_layer_i_nSteps.npy') # number of quantization steps defined by MPEG
+    
+elif layer == 2:
+    import B2Loader as b2
+
+    snrTable = np.load('data/mpeg_snr_layer_ii.npy') # SNR levels defined by MPEG
+    A = np.load('data/mpeg_qc_layer_ii_A.npy') # quantization coefficients defined by MPEG
+    B = np.load('data/mpeg_qc_layer_ii_B.npy') # quantization coefficients defined by MPEG
+    nQuantSteps = np.load('data/mpeg_qc_layer_ii_nSteps.npy') # number of quantization steps defined by MPEG
+    global C4
+    C4 = np.load('data/C4.npy',allow_pickle=True) # Layer II scalefactor transmission patterns
+    global nbal
+    global quantLevels
+    global sbLimit
+    global sumNbal
+    global maxBitsSubband
+    nbal, quantLevels, sbLimit, sumNbal, maxBitsSubband = b2.B2Loader(sampleRate,bitrate)
 #%% Implementation of the Analysis Polyphase filterbank
 """
 The Analysis Filterbank uses a buffer which is fed with blocks of input audio
@@ -158,7 +188,7 @@ factors to the subbands
 """
 # compare max abs values of each subband frame to scalefactor table and deduct
 # fitting scale factor
-def calcScaleFactors(subbandFrame):
+def calcScaleFactors(subbandSamples):
     # Input:
     # subbandFrame - a subbandFrame object containing subband samples of one
     #                frame, i.e. 32 x 12 or 32 x 36 samples
@@ -168,13 +198,10 @@ def calcScaleFactors(subbandFrame):
     # scaleFactorIndex - array of length 32 containing the indices pointing to
     #                    the scale factors stored in the table
     
-    if subbandFrame.layer == 1:
-        assert (subbandFrame.frame.shape==(32, 12)),"Wrong subbandFrame array dimensions!"
-        subbandMaxVals = np.amax(np.abs(subbandFrame.frame),axis=1)
-        assert ((subbandMaxVals<2.0).all()), "Maximum subband value larger than 2!"
-    else:
-        print("Error! Layer II and III coding not implemented yet")
-        raise SystemExit(0)
+    assert (subbandSamples.shape==(32, 12)),"Wrong subbandFrame array dimensions!"
+    subbandMaxVals = np.amax(np.abs(subbandSamples),axis=1)
+    assert ((subbandMaxVals<2.0).all()), "Maximum subband value larger than 2!"
+
     
     
     flippedScaleFactorTable = np.flip(scaleFactorTable) # needed for finding first value larger than sample value
@@ -188,20 +215,6 @@ def calcScaleFactors(subbandFrame):
 
     return scaleFactor, scaleFactorIndex
 
-# convert scale factor indices into binary representation for coding
-# NOTE: right now no conversion to binary yet
-def codeScaleFactors(scaleFactorIndex):
-    assert (type(scaleFactorIndex[0]==int)),"Input not integer value!"
-    
-    codedScaleFactor = []
-    for iBand in range(len(scaleFactorIndex)):
-        codedScaleFactor.append(bin(scaleFactorIndex[iBand]))
-    
-    return codedScaleFactor
-
-
-
-
 #%% Bit allocation
 """
 The bit allocation actually takes into account the output of the psychoacoustic
@@ -210,154 +223,246 @@ It takes a subbandFrame object, and through an iterative process it
 assigns a number of coding bits to each subband
 """
 
-# main function for bit allocation that calculates the number of bits to be
-# assigned to each subband of a frame of subband samples
-def assignBits(scaleFactorVal,nTotalBits,nMiscBits,frameSize,SMR):
-    # Input:
-    # scaleFactorVal - an array containing the scale factors for each subband
-    # nTotalBits - number of bits to be allocated to this frame
-      
-    assert (len(scaleFactorVal)==32),"scaleFactorVal array wrong length!"
-    
-    nAvailableBits = nTotalBits - nMiscBits # bits available for coding samples and scalefactors
-    nSplBits = 0
-    nScfBits = 0
-    
-    nBitsSubband = np.zeros(32,dtype=int)
-    
-    
-    # iterative bit allocation
-    while (nAvailableBits >= possibleIncreaseInBits(nBitsSubband)):
+if layer == 1:
+    # main function for bit allocation that calculates the number of bits to be
+    # assigned to each subband of a frame of subband samples
+    def assignBits(scaleFactorVal,nTotalBits,nMiscBits,frameSize,SMR):
+        # Input:
+        # scaleFactorVal - an array containing the scale factors for each subband
+        # nTotalBits - number of bits to be allocated to this frame
+          
+        assert (len(scaleFactorVal)==32),"scaleFactorVal array wrong length!"
         
-        minSubBand = determineMinimalMNR(nBitsSubband,nAvailableBits,SMR)
+        nAvailableBits = nTotalBits - nMiscBits # bits available for coding samples and scalefactors
+        nSplBits = 0
+        nScfBits = 0
         
-        #nBitsSubband = increaseNBits(nBitsSubband,minSubBand)
-        #nScfBits, nSplBits = updateBitAllocation(nBitsSubband)
+        nBitsSubband = np.zeros(32,dtype=int)
         
-        nBitsSubband[minSubBand], nSplBits, nScfBits = spendBit(nBitsSubband[minSubBand], nSplBits, nScfBits, frameSize)
         
-        nAvailableBits = nTotalBits - (nSplBits + nScfBits + nMiscBits)
-        assert (nAvailableBits>=0),"Allocated too many bits!"
+        # iterative bit allocation
+        while (nAvailableBits >= possibleIncreaseInBits(nBitsSubband)):
+            
+            minSubBand = determineMinimalMNR(nBitsSubband,nAvailableBits,SMR)
+            
+            #nBitsSubband = increaseNBits(nBitsSubband,minSubBand)
+            #nScfBits, nSplBits = updateBitAllocation(nBitsSubband)
+            
+            nBitsSubband[minSubBand], nSplBits, nScfBits = spendBit(nBitsSubband[minSubBand], nSplBits, nScfBits, frameSize)
+            
+            nAvailableBits = nTotalBits - (nSplBits + nScfBits + nMiscBits)
+            assert (nAvailableBits>=0),"Allocated too many bits!"
+        
+        
+        return nBitsSubband
     
+    # given the current state, return the smallest increase in bits allocated
+    # in a potential next iteration step
+    def possibleIncreaseInBits(nBitsSubband):
+        assert (len(nBitsSubband)==32),"Wrong length of input list!"
+        assert (np.max(nBitsSubband)<16),"Too many bits allocated!"
+        
+        if (np.min(nBitsSubband)==0):
+            minIncrease = 30
+        elif (0<np.min(nBitsSubband)<15):
+            minIncrease = 12
+        else:
+            assert(np.min(nBitsSubband)==15),"possibleIncreaseInBits loop error!"
+            assert(np.max(nBitsSubband)==15),"possibleIncreaseInBits loop error!"
+            minIncrease = np.inf # to break the while loop when no more bits can be added
     
-    return nBitsSubband
-
-# given the current state, return the smallest increase in bits allocated
-# in a potential next iteration step
-def possibleIncreaseInBits(nBitsSubband):
-    assert (len(nBitsSubband)==32),"Wrong length of input list!"
-    assert (np.max(nBitsSubband)<16),"Too many bits allocated!"
+        return minIncrease
     
-    if (np.min(nBitsSubband)==0):
-        minIncrease = 30
-    elif (0<np.min(nBitsSubband)<15):
-        minIncrease = 12
-    else:
-        assert(np.min(nBitsSubband)==15),"possibleIncreaseInBits loop error!"
-        assert(np.max(nBitsSubband)==15),"possibleIncreaseInBits loop error!"
-        minIncrease = np.inf # to break the while loop when no more bits can be added
-
-    return minIncrease
-
-# compare MNRs of each subband and return first subband with lowest MNR
-def determineMinimalMNR(nBitsSubband,nAvailableBits,SMR):
-    assert (len(nBitsSubband)==32),"Wrong length of input list!"
-    
-    MNR = updateMNR(nBitsSubband,SMR)
-    
-    minMNRIndex = np.argmin(MNR)
-    
-    # exclude bands with already 15 bits allocated to them
-    while minMNRIndex in np.where(nBitsSubband == 15)[0]:
-        MNR[minMNRIndex] = np.inf
+    # compare MNRs of each subband and return first subband with lowest MNR
+    def determineMinimalMNR(nBitsSubband,nAvailableBits,SMR):
+        assert (len(nBitsSubband)==32),"Wrong length of input list!"
+        
+        MNR = updateMNR(nBitsSubband,SMR)
+        
         minMNRIndex = np.argmin(MNR)
+        
+        # exclude bands with already 15 bits allocated to them
+        while minMNRIndex in np.where(nBitsSubband == 15)[0]:
+            MNR[minMNRIndex] = np.inf
+            minMNRIndex = np.argmin(MNR)
+        
+        # exclude bands with only 0 bits allocated to them, because they would need
+        # 30 bits instead of just 12 to increase the allocation
+        if nAvailableBits<30:
+            while minMNRIndex in np.where(nBitsSubband == 0)[0]:
+                MNR[minMNRIndex] = np.inf
+                minMNRIndex = np.argmin(MNR)
+        
     
-    # exclude bands with only 0 bits allocated to them, because they would need
-    # 30 bits instead of just 12 to increase the allocation
-    if nAvailableBits<30:
-        while minMNRIndex in np.where(nBitsSubband == 0)[0]:
+        return minMNRIndex
+    
+    # calculate MNR of all subbands
+    def updateMNR(nBitsSubband,SMR):
+        
+        SNR = np.zeros(32)
+        MNR = np.zeros(32)
+        nBands = 32
+        
+        for iBand in range(nBands):
+            assert (nBitsSubband[iBand]<16),"Too many bits assigned!"
+            snrIndex = np.where(snrTable[:,0] == nBitsSubband[iBand])[0][0]
+            SNR[iBand] = snrTable[snrIndex,2]
+            
+        MNR = SNR - SMR
+            
+        return MNR
+    
+    # calculate SMR equivalent from scalefactor
+    def equivSMR(scaleFactorVal):
+        
+        equivSMR = 20 * np.log10(scaleFactorVal * 32768) - 10
+        
+        return equivSMR
+    
+    # increase number of allocated bits to chosen subband to next step and
+    # return new number of bits allocated to code subband samples and scalefactors
+    def spendBit(nBits,nSplBits,nScfBits,frameSize):    
+        
+        assert (nBits<16),"Too many bits assigned!"
+        
+        if (0<nBits<15):
+            nBits += 1
+            nSplBits += frameSize
+        elif (nBits==0):
+            nBits += 2
+            nScfBits += 6
+            nSplBits += 2*frameSize
+        else:
+            nBits += 0
+        
+        return nBits, nSplBits, nScfBits
+
+
+
+
+elif layer == 2:
+    # main function for bit allocation that calculates the number of bits to be
+    # assigned to each subband of a frame of subband samples
+    def assignBits(scaleFactorVal,nTotalBits,nMiscBits,frameSize,SMR,scfTrPat):
+        # Input:
+        # scaleFactorVal - an array containing the scale factors for each subband
+        # nTotalBits - number of bits to be allocated to this frame
+          
+        assert (len(scaleFactorVal)==32),"scaleFactorVal array wrong length!"
+        
+        nAvailableBits = nTotalBits - nMiscBits # bits available for coding samples and scalefactors
+        nSplBits = 0
+        nScfBits = 0
+        
+        nBitsSubband = np.zeros(32)
+        nLevelsSubband = np.zeros(32,dtype=int)
+        
+        iterFlag = False
+        
+        # iterative bit allocation
+        while (nAvailableBits > 12):
+            
+            
+            minSubBand = determineMinimalMNR(nBitsSubband,nAvailableBits,SMR)
+            #nBitsSubband = increaseNBits(nBitsSubband,minSubBand)
+            #nScfBits, nSplBits = updateBitAllocation(nBitsSubband)
+            
+            nBitsSubbandCheck, nLevelsSubbandCheck, nSplBitsCheck, nScfBitsCheck = spendBit(nBitsSubband[minSubBand], nSplBits, nScfBits, frameSize, minSubBand,nLevelsSubband[minSubBand],scfTrPat)
+            # if the bit allocation was violated, choose the band with next smallest MNR for bit spending instead
+            iterCount = 0
+            while (nTotalBits - (nSplBitsCheck + nScfBitsCheck + nMiscBits))<0:
+                iterCount +=1
+                SMR[minSubBand] = -np.inf
+                minSubBand = determineMinimalMNR(nBitsSubband,nAvailableBits,SMR)
+                
+                nBitsSubbandCheck, nLevelsSubbandCheck, nSplBitsCheck, nScfBitsCheck = spendBit(nBitsSubband[minSubBand], nSplBits, nScfBits, frameSize, minSubBand,nLevelsSubband[minSubBand],scfTrPat)
+                
+                if (max(SMR)==-np.inf):
+                    print('In that if loop')
+                    nSplBitsCheck = nSplBits
+                    nScfBitsCheck = nScfBits
+                    nBitsSubbandCheck = nBitsSubband[minSubBand]
+                    nLevelsSubbandCheck = nLevelsSubband[minSubBand]
+                    iterFlag = True
+                if iterCount>32:
+                    nSplBitsCheck = nSplBits
+                    nScfBitsCheck = nScfBits
+                    nBitsSubbandCheck = nBitsSubband[minSubBand]
+                    nLevelsSubbandCheck = nLevelsSubband[minSubBand]
+                    iterFlag = True
+           
+            # after successful iteration, assign the permanent new values
+            nSplBits = nSplBitsCheck
+            nScfBits = nScfBitsCheck
+            nBitsSubband[minSubBand] = nBitsSubbandCheck
+            nLevelsSubband[minSubBand] = nLevelsSubbandCheck
+            nAvailableBits = nTotalBits - (nSplBits + nScfBits + nMiscBits)
+            assert (nAvailableBits>=0),"Allocated too many bits!"
+
+            if iterFlag:
+                break
+        
+        
+        return nBitsSubband  
+         
+    # compare MNRs of each subband and return first subband with lowest MNR
+    def determineMinimalMNR(nBitsSubband,nAvailableBits,SMR):
+        assert (len(nBitsSubband)==32),"Wrong length of input list!"
+        
+        MNR = updateMNR(nBitsSubband,SMR)
+        
+        minMNRIndex = np.argmin(MNR)
+        
+        # exclude bands with already max number of bits allocated to them
+        while minMNRIndex in np.where(nBitsSubband == maxBitsSubband)[0]:
             MNR[minMNRIndex] = np.inf
             minMNRIndex = np.argmin(MNR)
     
-
-    return minMNRIndex
-
-# calculate MNR of all subbands
-def updateMNR(nBitsSubband,SMR):
+        return minMNRIndex
     
-    SNR = np.zeros(32)
-    MNR = np.zeros(32)
-    nBands = 32
-    
-    for iBand in range(nBands):
-        assert (nBitsSubband[iBand]<16),"Too many bits assigned!"
-        snrIndex = np.where(snrTable[:,0] == nBitsSubband[iBand])[0][0]
-        SNR[iBand] = snrTable[snrIndex,2]
+    # calculate MNR of all subbands
+    def updateMNR(nBitsSubband,SMR):
         
-    MNR = SNR - SMR
+        SNR = np.zeros(32)
+        MNR = np.zeros(32)
+        nBands = 32
         
-    return MNR
-
-# calculate SMR equivalent from scalefactor
-def equivSMR(scaleFactorVal):
+        for iBand in range(nBands):
+            assert (nBitsSubband[iBand]<=16),"Too many bits assigned!"
+            snrIndex = np.where(snrTable[:,0] == nBitsSubband[iBand])[0][0]
+            SNR[iBand] = snrTable[snrIndex,2]
+            
+        MNR = SNR - SMR
+            
+        return MNR
     
-    equivSMR = 20 * np.log10(scaleFactorVal * 32768) - 10
+    # increase number of allocated bits to chosen subband to next step and
+    # return new number of bits allocated to code subband samples and scalefactors
+    def spendBit(nBits,nSplBits,nScfBits,frameSize,nBand,nLevel,scfTrPat):    
+        
+        assert (nBits<=16),"Too many bits assigned!"
+        
+        nLevel += 1
+        nextLevel = quantLevels[nBand,nLevel]
+        assert (nextLevel!=-np.inf), "Bit spending error!"
+        
+        dBits = snrTable[snrTable[:,1]==nextLevel,0] - nBits
+        
+        if (nBits==0)&(dBits>0):
+            nScfBits += 2 + 6*len(scfTrPat[nBand])
     
-    return equivSMR
-
-# increase number of allocated bits to chosen subband to next step and
-# return new number of bits allocated to code subband samples and scalefactors
-def spendBit(nBits,nSplBits,nScfBits,frameSize):    
+        nBits += dBits 
+        
+        nSplBits += int(dBits*frameSize)
+        
+        return nBits, nLevel, nSplBits, nScfBits
     
-    assert (nBits<16),"Too many bits assigned!"
-    
-    if (0<nBits<15):
-        nBits += 1
-        nSplBits += frameSize
-    elif (nBits==0):
-        nBits += 2
-        nScfBits += 6
-        nSplBits += 2*frameSize
-    else:
-        nBits += 0
-    
-    return nBits, nSplBits, nScfBits
-
-# # increase number of allocated bits to chosen subband to next step
-# def increaseNBits(nBitsSubband,minSubBand):    
-    
-#     currentNBits = nBitsSubband[minSubBand]
-#     assert (currentNBits<16),"Too many bits assigned!"
-#     if (0<currentNBits<15):
-#         nBitsSubband[minSubBand] += 1
-#     elif (currentNBits==0):
-#         nBitsSubband[minSubBand] += 2
-#     else:
-#         nBitsSubband[minSubBand] += 0
-    
-#     return nBitsSubband
-
-# # returns new number of bits allocated to code subband samples and scalefactors
-# # according to the update of nBits per subband
-# def updateBitAllocation(nBitsSubband):
-#     assert (len(nBitsSubband)==32),"Wrong length of input list!"
-    
-#     nScfBits = 0 # bits allocated to code scalefactors
-#     nSplBits = 0 # bits allocated to code samples
-#     nBands = 32
-    
-#     for iBand in range(nBands):
-#         if nBitsSubband[iBand]>0:
-#             nScfBits += 6
-#             nSplBits += nBitsSubband[iBand]*12
-#         elif nBitsSubband[iBand]==0:
-#             nScfBits += 0
-#             nSplBits += 0
-    
-#     return nScfBits, nSplBits
-
-
-
+    # calculate SMR equivalent from scalefactor
+    def equivSMR(scaleFactorVal):
+        
+        equivSMR = 20 * np.log10(scaleFactorVal * 32768) - 10
+        
+        return equivSMR
 #%% Quantizer
 
 """
@@ -369,78 +474,144 @@ in a transmitFrame object together with the other input data, quasi
 representing a block of the formatted bitstream.
 
 """
-
-#
 class transmitFrame:
-    def __init__(self,nSubbands=None,nBitsSubband=None,scalefactorInd=None,quantSubbandSamples=None):
+    def __init__(self,nSubbands=None,nBitsSubband=None,scalefactorInd=None,quantSubbandSamples=None,scfTransmissionPattern=None,scfSelectionInfo=None):
         assert (len(nSubbands)==len(scalefactorInd)==len(quantSubbandSamples)), "Length of input lists not consistent!"
         self.nSubbands = nSubbands
         self.nBitsSubband = nBitsSubband
         self.scalefactorInd = scalefactorInd
         self.quantSubbandSamples = quantSubbandSamples
+        self.scfTransmissionPattern = scfTransmissionPattern
+        self.scfSelectionInfo = scfSelectionInfo
+            
+if layer==1:    #
+
+            
+    
+    # multiply subband frame by scalefactors and qua0,,ntize them with the number of bits
+    def quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband):
+        # Input:
+        # subFrame - a subbandFrame object containing 12/36 output samples of the
+        #                polyphase filterbank
+        # scaleFactorInd - array of length 32 containing the indices pointing to
+        #                  the respective scale factors for each band
+        # nBitsSubband - array of length 32 determining the bit allocation for
+        #                each band
+        # Output:
+        # transmit - transmitFrame object containing the indices of subbands to be
+        #            coded, the number of bits allocated to each band, the indices
+        #            of scale factors for every coded band and the quantized
+        #            samples for every coded band
         
-
-# multiply subband frame by scalefactors and qua0,,ntize them with the number of bits
-def quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband):
-    # Input:
-    # subFrame - a subbandFrame object containing 12/36 output samples of the
-    #                polyphase filterbank
-    # scaleFactorInd - array of length 32 containing the indices pointing to
-    #                  the respective scale factors for each band
-    # nBitsSubband - array of length 32 determining the bit allocation for
-    #                each band
-    # Output:
-    # transmit - transmitFrame object containing the indices of subbands to be
-    #            coded, the number of bits allocated to each band, the indices
-    #            of scale factors for every coded band and the quantized
-    #            samples for every coded band
-    
-    assert (type(subFrame)==subbandFrame),"Input not a subbandFrame object!"
-    
-    transmitScalefactorInd = []
-    transmitSubband = []
-    transmitNSubbands = []
-    
-    
-    for iBand in range(32):
-        if nBitsSubband[iBand]>0:
-            transmitNSubbands.append(iBand)
-            transmitScalefactorInd.append(scaleFactorInd[iBand])
-            
-            normalizedBand = subFrame.frame[iBand,:]/scaleFactorTable[scaleFactorInd[iBand]]
-            quantizedBand = subbandQuantizer(normalizedBand,nBitsSubband[iBand])
-            
-            
-            transmitSubband.append(quantizedBand)
-            
-    transmitNSubbands = np.array(transmitNSubbands,dtype=int)
-    transmitScalefactorInd = np.array(transmitScalefactorInd,dtype=int)
-    transmitSubband = np.array(transmitSubband)
-    
-    transmit=transmitFrame(transmitNSubbands,nBitsSubband,transmitScalefactorInd,transmitSubband)
-            
-    return transmit
-
-
-# Uniform mid-tread quantizer defined by MPEG
-def subbandQuantizer(normalizedBand,nBits):
-    
-    indBits = nBits-2
-    
-    quantizedBand = A[indBits]*normalizedBand+B[indBits]
-
-    # assign each quantized value to a fixed value dependent on nBits
-    assignedVals = np.arange(-1,1+1e-12,2/(nQuantSteps[indBits]-1))
-    threshVals   = np.arange(-1,A[indBits]+B[indBits],-2*B[indBits])-2*B[indBits]
-    
-    for iSample in range(len(quantizedBand)):
-        assert(-1<=quantizedBand[iSample]<=A[indBits]+B[indBits]),"Quantized value out of bounds!"
-        quantizedBand[iSample]=assignedVals[np.argmax(quantizedBand[iSample]<=threshVals)]
+        assert (type(subFrame)==subbandFrame),"Input not a subbandFrame object!"
         
-    return quantizedBand
+        transmitScalefactorInd = []
+        transmitSubband = []
+        transmitNSubbands = []
+        
+        
+        for iBand in range(32):
+            if nBitsSubband[iBand]>0:
+                transmitNSubbands.append(iBand)
+                transmitScalefactorInd.append(scaleFactorInd[iBand])
+                
+                normalizedBand = subFrame.frame[iBand,:]/scaleFactorTable[scaleFactorInd[iBand]]
+                quantizedBand = subbandQuantizer(normalizedBand,nBitsSubband[iBand])
+                
+                
+                transmitSubband.append(quantizedBand)
+                
+        transmitNSubbands = np.array(transmitNSubbands,dtype=int)
+        transmitScalefactorInd = np.array(transmitScalefactorInd,dtype=int)
+        transmitSubband = np.array(transmitSubband)
+        
+        transmit=transmitFrame(transmitNSubbands,nBitsSubband,transmitScalefactorInd,transmitSubband)
+                
+        return transmit
+    
+    
+    # Uniform mid-tread quantizer defined by MPEG
+    def subbandQuantizer(normalizedBand,nBits):
+        
+        indBits = nBits-2
+        
+        quantizedBand = A[indBits]*normalizedBand+B[indBits]
+    
+        # assign each quantized value to a fixed value dependent on nBits
+        assignedVals = np.arange(-1,1+1e-12,2/(nQuantSteps[indBits]-1))
+        threshVals   = np.arange(-1,A[indBits]+B[indBits],-2*B[indBits])-2*B[indBits]
+        
+        for iSample in range(len(quantizedBand)):
+            assert(-1<=quantizedBand[iSample]<=A[indBits]+B[indBits]),"Quantized value out of bounds!"
+            quantizedBand[iSample]=assignedVals[np.argmax(quantizedBand[iSample]<=threshVals)]
+            
+        return quantizedBand
 
 
-#%% Encoder
+elif layer==2:              
+    # multiply subband frame by scalefactors and qua0,,ntize them with the number of bits
+    def quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband,scfTransmissionPattern,scfSelectionInfo):
+        # Input:
+        # subFrame - a subbandFrame object containing 12/36 output samples of the
+        #                polyphase filterbank
+        # scaleFactorInd - array of length 32 containing the indices pointing to
+        #                  the respective scale factors for each band
+        # nBitsSubband - array of length 32 determining the bit allocation for
+        #                each band
+        # Output:
+        # transmit - transmitFrame object containing the indices of subbands to be
+        #            coded, the number of bits allocated to each band, the indices
+        #            of scale factors for every coded band and the quantized
+        #            samples for every coded band
+        
+        assert (type(subFrame)==subbandFrame),"Input not a subbandFrame object!"
+        
+        transmitScalefactorInd = []
+        transmitSubband = []
+        transmitNSubbands = []
+        
+        
+        for iBand in range(32):
+            if nBitsSubband[iBand]>0:
+                transmitNSubbands.append(iBand)
+                transmitScalefactorInd.append(scaleFactorInd[iBand])
+                
+                quantizedBand = np.zeros(36)
+                for iScf in range(3):
+                    normalizedBand = subFrame.frame[iBand,iScf*12:iScf*12+12]/scaleFactorTable[scaleFactorInd[iBand,iScf]]
+                    quantizedBand[iScf*12:iScf*12+12] = subbandQuantizer(normalizedBand,nBitsSubband[iBand])
+                
+                
+                transmitSubband.append(quantizedBand)
+                
+        transmitNSubbands = np.array(transmitNSubbands,dtype=int)
+        transmitScalefactorInd = np.array(transmitScalefactorInd,dtype=int)
+        transmitSubband = np.array(transmitSubband)
+        
+        transmit=transmitFrame(transmitNSubbands,nBitsSubband,transmitScalefactorInd,transmitSubband,scfTransmissionPattern,scfSelectionInfo)
+                
+        return transmit
+    
+    
+    # Uniform mid-tread quantizer defined by MPEG
+    def subbandQuantizer(normalizedBand,nBits):
+        
+        indBits = [np.where(snrTable[:,0] == nBits)[0][0]-1]
+        
+        quantizedBand = A[indBits]*normalizedBand+B[indBits]
+    
+        # assign each quantized value to a fixed value dependent on nBits
+        assignedVals = np.arange(-1,1+1e-12,2/(nQuantSteps[indBits]-1))
+        threshVals   = np.arange(-1,A[indBits]+B[indBits],-2*B[indBits])-2*B[indBits]
+        
+        for iSample in range(len(quantizedBand)):
+            assert(-1<=quantizedBand[iSample]<=A[indBits]+B[indBits]),"Quantized value out of bounds!"
+            quantizedBand[iSample]=assignedVals[np.argmax(quantizedBand[iSample]<=threshVals)]
+            
+        return quantizedBand
+
+
+#%%
 
 """
 The encoder stage combines the scale factor calculation, bit allocation and 
@@ -449,105 +620,263 @@ pushing new subband samples into a subbandFrame object and performing the
 operations. It outputs a list of transmitFrame objects which can then be read
 by the decoder.
 """
+if layer == 1:
+    def encoder(subSamples,nTotalBits,x,sampleRate,smrModel,Aweighting):
+        # Input:
+        # subSamples - array or list of subband samples calculated from the
+        #              analysis polyphase filterbank
+        # nTotalBits - the bitrate defined in terms of bits available per frame
+        # Output:
+        # transmitFrames - list of transmitFrames objects, the simulated bitstream
+        
+        
+        # initialize and push subband samples into a subbandFrame object
+        subFrame = subbandFrame(layer=1)
+        
+        transmitFrames=[]
+        
+        nFrames = int(subSamples.shape[1]/subFrame.nSamples)
+        iSubSample = 0
+        iAudioSample = 0
+        
+        
+        # preallocate for bit allocation
+        nHeaderBits   =   32 # bits needed for header
+        nCrcBits      =    0 # CRC checkword, 16 if used
+        nBitAllocBits =  128 # bit allocation -> codes 4bit int values 0...15 for each of 32 subbands
+        nAncBits      =    0 # bits needed for ancillary data
+        
+        nMiscBits = nHeaderBits + nCrcBits + nBitAllocBits +  nAncBits
+         
+        if Aweighting:
+            pqmfFreq = sampleRate/64 *(np.arange(0,32)+0.5)        
+            Afreq=[10, 12.5, 16, 20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 
+                       250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 
+                       3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000]
+            Aweight=[-70.4,0 -63.4, -56.7, -50.5, -44.7, -39.4, -34.6, -30.2, -26.2, 
+                      -22.5, -19.1, -16.1, -13.4, -10.9, -8.6, -6.6, -4.8, -3.2, -1.9, 
+                      -0.8, 0, 0.6, 1.0, 1.2, 1.3, 1.2, 1.0, 0.5, -0.1, -1.1, -2.5, 
+                      -4.3, -6.6, -9.3]     
+            pqmfAweight = np.interp(pqmfFreq,Afreq,Aweight)
+            pqmfAweight[0] = 0
+        else:
+            pqmfAweight = np.zeros(32)
+        
+        
+        for iFrame in range(nFrames):
+    
+            # push next 12/36 subband samples into the subbandFrame object
+            
+            subFrame.pushFrame(subSamples[:,iSubSample:iSubSample+12])
+            iSubSample += 12
+    
+            
+            # calculate scalefactors for current frame
+            
+            #start = time.time()
+            scaleFactorVal, scaleFactorInd = calcScaleFactors(subFrame.frame)
+            #end = time.time()
+            #print("scalefactor calculation in")
+            #print(end - start)
+              
+            # SMR calculation
+            if smrModel == 'psy':
+                # grab next 512/1024 audio samples for psychoacoustic model
+                iPsyModSample = iAudioSample-256-64
+                psyModFrame = x[iPsyModSample:iPsyModSample+512]
+                iAudioSample += 32*subFrame.nSamples
+                if len(psyModFrame)==512:
+                    SMR = pam.PsyMod(psyModFrame,scaleFactorVal,subFrame.layer,sampleRate,bitrate)
+                else:
+                    SMR = np.zeros(32)
+            elif smrModel == 'scf':
+                SMR = equivSMR(scaleFactorVal) + pqmfAweight
+            elif smrModel == 'spl':
+                SMR = 76 + 10 * np.log10( np.sum( subFrame.frame**2 ,axis=1)) + pqmfAweight
+            
+            # bit allocation for current frame
+            
+            #start = time.time()        
+            nBitsSubband = assignBits(scaleFactorVal,nTotalBits,nMiscBits,subFrame.nSamples,SMR)
+            #end = time.time()
+            #print("bit allocation in")
+            #print(end - start)
+        
+        
+            # quantize subband samples of current frame and store in transmitFrame object
+            
+            #start = time.time()
+            transmit = quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband)
+            transmitFrames.append(transmit)
+            #end = time.time()
+            #print("quantization in")
+            #print(end - start)
+            
+        return transmitFrames
 
-def encoder(subSamples,nTotalBits,x,sampleRate,smrModel,Aweighting):
-    # Input:
-    # subSamples - array or list of subband samples calculated from the
-    #              analysis polyphase filterbank
-    # nTotalBits - the bitrate defined in terms of bits available per frame
-    # Output:
-    # transmitFrames - list of transmitFrames objects, the simulated bitstream
-    
-    
-    # initialize and push subband samples into a subbandFrame object
-    subFrame = subbandFrame()
-    
-    transmitFrames=[]
-    
-    nFrames = int(subSamples.shape[1]/subFrame.nSamples)
-    iSubSample = 0
-    iAudioSample = 0
-    
-    bitrate = nTotalBits/384*sampleRate/1000
-    
-    # preallocate for bit allocation
-    nHeaderBits   =   32 # bits needed for header
-    nCrcBits      =    0 # CRC checkword, 16 if used
-    nBitAllocBits =  128 # bit allocation -> codes 4bit int values 0...15 for each of 32 subbands
-    nAncBits      =    0 # bits needed for ancillary data
-    
-    nMiscBits = nHeaderBits + nCrcBits + nBitAllocBits +  nAncBits
-    
-    
-    
-    
-    
-    if Aweighting:
-        pqmfFreq = sampleRate/64 *(np.arange(0,32)+0.5)        
-        Afreq=[10, 12.5, 16, 20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 
-                   250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 
-                   3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000]
-        Aweight=[-70.4,0 -63.4, -56.7, -50.5, -44.7, -39.4, -34.6, -30.2, -26.2, 
-                  -22.5, -19.1, -16.1, -13.4, -10.9, -8.6, -6.6, -4.8, -3.2, -1.9, 
-                  -0.8, 0, 0.6, 1.0, 1.2, 1.3, 1.2, 1.0, 0.5, -0.1, -1.1, -2.5, 
-                  -4.3, -6.6, -9.3]     
-        pqmfAweight = np.interp(pqmfFreq,Afreq,Aweight)
-        pqmfAweight[0] = 0
-    else:
-        pqmfAweight = np.zeros(32)
-    
-    
-    for iFrame in range(nFrames):
-
-        # push next 12/36 subband samples into the subbandFrame object
+elif layer == 2:
+    def scalefactorClass(dscf):
+        # determine proximity of two adjacent scalefactors in a Layer II subband
+        # frame by dividing the index distancs dscf into classes
         
-        subFrame.pushFrame(subSamples[:,iSubSample:iSubSample+subFrame.nSamples])
-        iSubSample += subFrame.nSamples
-
+        if (dscf<=-3):
+            scfClass = 1
+        elif (-3<dscf<0):
+            scfClass = 2
+        elif (dscf==0):
+            scfClass = 3
+        elif (0<dscf<3):
+            scfClass = 4
+        else:
+            scfClass = 5    
+            
+        return scfClass
+    
+    def transmissionPatternsLayerII(scfClass1,scfClass2):
+        # using Table C.4 of the MPEG standard, determine how the three
+        # scalefactors of a subband in a Layer II subband frame schould be coded
+        # input:
+        # scfClass1/2 : proximity indicators of the 1st and 2nd, and 2nd and 3rd
+        # scalefactor respectively
         
-        # calculate scalefactors for current frame
+        line = ((C4[:,0]==scfClass1)&(C4[:,1]==scfClass2))
         
-        #start = time.time()
-        scaleFactorVal, scaleFactorInd = calcScaleFactors(subFrame)
-        #end = time.time()
-        #print("scalefactor calculation in")
-        #print(end - start)
+        scfUsed = np.array(C4[line,2][0])
+        transmissionPattern = np.array(list(C4[line,3][0]))
+        selectionInfo = C4[line,4][0]
         
+        return scfUsed, transmissionPattern, selectionInfo
+    
+    def codeScfLayerII(scfInd):
+        # compare the three scalefactors per band of a Layer II subband frame and
+        # apply smarter coding to save bits
+        # input:
+        # scfInd - array of size 32x3 containing the scalefactor
+        # indices of one Layer II subband frame of 36 subband samples
         
-        # SMR calculation
-        if smrModel == 'psy':
-            # grab next 512/1024 audio samples for psychoacoustic model
-            iPsyModSample = iAudioSample-256-64
-            psyModFrame = x[iPsyModSample:iPsyModSample+512]
-            iAudioSample += 32*subFrame.nSamples
-            if len(psyModFrame)==512:
-                SMR = pam.PsyMod(psyModFrame,scaleFactorVal,subFrame.layer,sampleRate,bitrate)
+        scfUsed = []
+        trPat = []
+        selInfo = np.zeros(32)
+        
+        for iBand in range(32):
+        
+            dscf1 = scfInd[iBand,0]-scfInd[iBand,1]
+            dscf2 = scfInd[iBand,1]-scfInd[iBand,2]
+        
+            scfClass1 = scalefactorClass(dscf1)
+            scfClass2 = scalefactorClass(dscf2)
+        
+            sU, tP, selInfo[iBand] = transmissionPatternsLayerII(scfClass1,scfClass2)
+            scfUsed.append(sU)
+            trPat.append(tP)
+        
+        scfUsed = np.array(scfUsed)
+        trPat = np.array(trPat)
+        
+        return scfUsed, trPat, selInfo
+    
+    def mapScfLayerII(scfUsed,scfInd):
+        
+        for iBand in range(32):
+            if scfUsed[iBand,0] != 4:
+                scfInd[iBand,:] = scfInd[iBand,scfUsed[iBand]-1]
             else:
-                SMR = np.zeros(32)
-        elif smrModel == 'scf':
-            SMR = equivSMR(scaleFactorVal) + pqmfAweight
-        elif smrModel == 'spl':
-            SMR = 76 + 10 * np.log10( np.sum( subFrame.frame**2 ,axis=1)) + pqmfAweight
+                maxInd = np.argmin(scfInd[iBand,:]) # find maximum scalefactor
+                scfInd[iBand,:] = scfInd[iBand,maxInd] 
+            scfVal = scaleFactorTable[scfInd]
         
-        # bit allocation for current frame
+        return scfInd, scfVal
+    
+    def encoder(subSamples,nTotalBits,x,sampleRate,smrModel,Aweighting):
+        # Input:
+        # subSamples - array or list of subband samples calculated from the
+        #              analysis polyphase filterbank
+        # nTotalBits - the bitrate defined in terms of bits available per frame
+        # Output:
+        # transmitFrames - list of transmitFrames objects, the simulated bitstream
         
-        #start = time.time()        
-        nBitsSubband = assignBits(scaleFactorVal,nTotalBits,nMiscBits,subFrame.nSamples,SMR)
-        #end = time.time()
-        #print("bit allocation in")
-        #print(end - start)
+        
+        # initialize and push subband samples into a subbandFrame object
+        subFrame = subbandFrame(layer=2)
+        
+        transmitFrames=[]
+        
+        nFrames = int(subSamples.shape[1]/subFrame.nSamples)
+        iSubSample = 0
+        iAudioSample = 0
+        
+        
+        # preallocate for bit allocation
+        nHeaderBits   =   32 # bits needed for header
+        nCrcBits      =    0 # CRC checkword, 16 if used
+        nBitAllocBits =    sumNbal # bit allocation is more complex in Layer II and depends on the bit allocation tables defined in Tables B.2
+        nAncBits      =    0 # bits needed for ancillary data
+        
+        nMiscBits = nHeaderBits + nCrcBits + nBitAllocBits +  nAncBits
+        
+        
+        if Aweighting:
+            pqmfFreq = sampleRate/64 *(np.arange(0,32)+0.5)        
+            Afreq=[10, 12.5, 16, 20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 
+                       250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 
+                       3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000]
+            Aweight=[-70.4,0 -63.4, -56.7, -50.5, -44.7, -39.4, -34.6, -30.2, -26.2, 
+                      -22.5, -19.1, -16.1, -13.4, -10.9, -8.6, -6.6, -4.8, -3.2, -1.9, 
+                      -0.8, 0, 0.6, 1.0, 1.2, 1.3, 1.2, 1.0, 0.5, -0.1, -1.1, -2.5, 
+                      -4.3, -6.6, -9.3]     
+            pqmfAweight = np.interp(pqmfFreq,Afreq,Aweight)
+            pqmfAweight[0] = 0
+        else:
+            pqmfAweight = np.zeros(32)
+        
+        
+        for iFrame in range(nFrames):
+            # push next 36 subband samples into the subbandFrame object
+            subFrame.pushFrame(subSamples[:,iSubSample:iSubSample+36])
+            iSubSample+=36
+            
+            # calculate scalefactors for current frame
+            scaleFactorVal = np.zeros((32,3))
+            scaleFactorInd = np.zeros((32,3),dtype=int)
+            for iScf in range(3):
+                scaleFactorVal[:,iScf], scaleFactorInd[:,iScf] = calcScaleFactors(subFrame.frame[:,iScf*12:iScf*12+12])
+                
+            scfUsed, scfTransmissionPattern, scfSelectionInfo = codeScfLayerII(scaleFactorInd)
+            scaleFactorInd, scaleFactorVal = mapScfLayerII(scfUsed,scaleFactorInd)
     
     
-        # quantize subband samples of current frame and store in transmitFrame object
+            # SMR calculation
+            if smrModel == 'psy':
+                # grab next 512/1024 audio samples for psychoacoustic model
+                iPsyModSample = iAudioSample-256+64
+                psyModFrame = x[iPsyModSample:iPsyModSample+1024]
+                iAudioSample += 32*subFrame.nSamples
+                if len(psyModFrame)==1024:
+                    SMR = pam.PsyMod(psyModFrame,scaleFactorVal,subFrame.layer,sampleRate,bitrate)
+                else:
+                    SMR = np.zeros(32)
+            elif smrModel == 'scf':
+                SMR = equivSMR(np.max(scaleFactorVal,axis=1)) + pqmfAweight
+            elif smrModel == 'spl':
+                SMR = 76 + 10 * np.log10( np.sum( subFrame.frame**2 ,axis=1)) + pqmfAweight
+            
+            # bit allocation for current frame
+            #start = time.time()        
+            nBitsSubband = assignBits(scaleFactorVal,nTotalBits,nMiscBits,subFrame.nSamples,SMR,scfTransmissionPattern)
+            #end = time.time()
+            #print("bit allocation in")
+            #print(end - start)
+            # quantize subband samples of current frame and store in transmitFrame object
+            #start = time.time()
+            transmit = quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband,scfTransmissionPattern,scfSelectionInfo)
         
-        #start = time.time()
-        transmit = quantizeSubbandFrame(subFrame,scaleFactorInd,nBitsSubband)
-        transmitFrames.append(transmit)
-        #end = time.time()
-        #print("quantization in")
-        #print(end - start)
-        
-    return transmitFrames
+            
+            transmitFrames.append(transmit)
+            #end = time.time()
+            #print("quantization in")
+            #print(end - start)
+            
+        return transmitFrames
 
 #%% Decoder
 
@@ -620,14 +949,22 @@ def decoder(transmitFrames):
     
     nFrames = len(transmitFrames)
     
-    nSubSamples = nFrames*12
+    if layer==1:
+        nSubSamples = nFrames*12
+    elif layer==2:
+        nSubSamples = nFrames*36
     decodedBands = np.zeros((nSubSamples,32))
     
     
     for iFrame in range(nFrames):
         iBand=0
         for indBand in transmitFrames[iFrame].nSubbands:
-                decodedBands[iFrame*12:(iFrame+1)*12,indBand] = transmitFrames[iFrame].quantSubbandSamples[iBand]*scaleFactorTable[transmitFrames[iFrame].scalefactorInd[iBand]]
+                if layer==1:
+                    decodedBands[iFrame*12:(iFrame+1)*12,indBand] = transmitFrames[iFrame].quantSubbandSamples[iBand]*scaleFactorTable[transmitFrames[iFrame].scalefactorInd[iBand]]
+                elif layer==2:
+                    for iScf in range(3):
+                        decodedBands[(iFrame*36+iScf*12):(iFrame*36+iScf*12+12),indBand] = transmitFrames[iFrame].quantSubbandSamples[iBand,(iScf*12):(iScf*12+12)]*scaleFactorTable[transmitFrames[iFrame].scalefactorInd[iBand,iScf]]
+
                 iBand +=1
     
     synBuff = synthesisBuffer()
