@@ -109,7 +109,10 @@ if layer==1:
 elif layer==2:
     bpf = 1152
     frameLength = 36
+    import B2Loader as b2
+    nbal, quantLevels, sbLimit, sumNbal, maxBitsSubband = b2.B2Loader(sampleRate,bitrate)
 nTotalBits = int(np.floor(bitrate*1000/sampleRate*bpf))
+bps = nTotalBits/bpf
 #nTotalBits = 3072 # 768 equals 2bps
 
 file = open("layer", "wb")
@@ -121,6 +124,11 @@ file.close
 file = open("sampleRate", "wb")
 np.save(file, sampleRate)
 file.close
+
+print("\n")
+print("Test track:",filename)
+print("Layer",layer,", bitrate",bitrate,"kbit/s or %.2f"%bps,"bps")
+print("SMR model:",smrModel,", Aweighting:",Aweighting,"\n")
 
 import mpegAudioFunctions as mpeg
 #%%
@@ -136,8 +144,7 @@ start = time.time()
 subSamples = mpeg.feedCoder(x)
 
 end = time.time()
-print("Subband samples calculated in")
-print(end - start)
+print("Subband samples calculated in\n %.2f"%(end - start),"seconds")
 
 #%% Encoding
 
@@ -146,8 +153,7 @@ start = time.time()
 transmitFrames = mpeg.encoder(subSamples,nTotalBits,x,sampleRate,smrModel,Aweighting)
     
 end = time.time()
-print("scaling, bit allocation and quantizing in")
-print(end - start)
+print("scaling, bit allocation and quantizing in\n %.2f"%(end - start),"seconds")
 
 
 #%% create matrix just for checking bit allocation
@@ -177,8 +183,7 @@ start = time.time()
 decodedSignal = mpeg.decoder(transmitFrames)
 
 end = time.time()
-print("Decoded signal in")
-print(end - start,"\n")
+print("Decoded signal in\n %.2f"%(end - start),"seconds\n")
 
 
 """
@@ -194,27 +199,50 @@ if ((len(decodedSignal)-len(x)-481)>0):
     mse = np.mean((x[0:len(decodedSignal)-481,0]-decodedSignal[481:-(len(decodedSignal)-len(x)-481)])**2)
 else:
     mse = np.mean((x[0:len(decodedSignal)-481,0]-decodedSignal[481:])**2)
-print("MSE =",mse)
+print("MSE = %1.5e"%mse)
 
 # avg. squared value of output
 mso = np.mean(decodedSignal[481:]**2)
 
 snr = 10*np.log10(mso/mse)
-print("SNR =",snr,"dB")
+print("SNR = %.5f"%snr,"dB")
 
 
 # code length
+def mapScfSelLayerII(selInfo):
+    nScf = np.zeros(len(selInfo))
+    for iBand in range(len(selInfo)):
+        if selInfo[iBand]==0:
+            nScf[iBand] = 3
+        elif selInfo[iBand]==1:
+            nScf[iBand] = 2
+        elif selInfo[iBand]==2:
+            nScf[iBand] = 1
+        elif selInfo[iBand]==3:
+            nScf[iBand] = 2
+    return nScf
+
 
 inputlength = len(x)*16
 
-nSampleBits = np.sum(nBitsAllocated)*12
-nScaleFactorBits = np.count_nonzero(nBitsAllocated)*6
-nMiscBits=(128+32)*len(transmitFrames) 
+if layer==1:
+    nSampleBits = np.sum(nBitsAllocated)*12
+    nScaleFactorBits = np.count_nonzero(nBitsAllocated)*6
+    nMiscBits=(128+32)*len(transmitFrames) 
+elif layer==2:
+    nSampleBits = int(np.sum(nBitsAllocated)*36)
+    nScaleFactorBits = 0
+    for iFrame in range(len(transmitFrames)):
+        nScaleFactorBits += 6*np.sum(mapScfSelLayerII(transmitFrames[iFrame].scfSelectionInfo[np.nonzero(nBitsAllocated[iFrame])]))
+    nMiscBits=(sumNbal+32)*len(transmitFrames)
+    
 codelength = nSampleBits + nScaleFactorBits + nMiscBits
 
 compressionfactor = inputlength/codelength
-print("compression factor =",compressionfactor,"\n")
+print("compression factor = %.2f"%compressionfactor,"")
 
+informationRate = nSampleBits/len(x)
+print("information rate = %.2f"%informationRate,"\n")
 
 # entropy estimate
 
@@ -272,9 +300,9 @@ def empiricalselfentropy(x):
 ese = empiricalselfentropy(scaleFactorInd)
 iacl = idealadaptivecodelength(scaleFactorInd)
 print("Scale factors")
-print("Empirical self-entropy =",ese)
+print("Empirical self-entropy = %.5f"%ese)
 print("< H(X) <")
-print("Ideal adaptive code length =",iacl,"\n")
+print("Ideal adaptive code length = %.5f"%iacl,"\n")
 
 
 #%% Comparison plots
@@ -285,8 +313,14 @@ f, Py = scisig.welch(decodedSignal[481:],           fs=sampleRate, window='hammi
 
 fig, axes = plt.subplots(2, 2, figsize=(10, 7))
 
-#axes[0, 0].set_title('time signal squared error')
-#axes[0, 0].plot((x[0:len(decodedSignal)-481,0]-decodedSignal[481:])**2)
+endSource = len(decodedSignal)-482
+if len(decodedSignal-481)>len(x):
+    endDecode = len(x)-(len(decodedSignal)-481)
+else:
+    endDecode = -1
+
+axes[0, 0].set_title('time signal squared error')
+axes[0, 0].plot((x[0:endSource,0]-decodedSignal[481:endDecode])**2)
 axes[0, 0].grid(axis='x')
 #
 axes[0, 1].set_title('spectral error (absolute difference, max-normalized)')
@@ -321,7 +355,7 @@ wav.write('test_recons.wav', 44100, decodedInt)
 #%% misc. for evaluation
 
 # scaleFactorIndArray=np.array(scaleFactorInd)
-nBitsAllocatedArray=np.array(nBitsAllocated)
+nBitsAllocated=np.array(nBitsAllocated)
 plt.figure()
-plt.imshow(np.transpose(nBitsAllocatedArray))
+plt.imshow(np.transpose(nBitsAllocated))
 plt.colorbar()
