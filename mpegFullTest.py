@@ -9,8 +9,6 @@ Created on Tue Apr 14 14:31:56 2020
 Test script for testing my MPEG Audio coder
 """
 
-
-
 import scipy.io.wavfile as wav
 
 import numpy as np
@@ -21,10 +19,7 @@ import time
 
 import matplotlib.pyplot as plt
 
-
-global layer
-global bitrate
-global sampleRate
+import mpegAudioFunctions as mpeg
 
 #%% load audio
 """
@@ -35,48 +30,37 @@ x[0:44100,1] tot test the coder, as it is very slow
 
 # filename = 'data/audio/cupid_audio.wav'
 # sampleRate, x=wav.read(filename)
-# x = np.expand_dims(x[:,1], axis = 1)
+# # x = np.expand_dims(x[:,1], axis = 1)
+# x = np.expand_dims(x[330750:771750,1], axis = 1)
 
 # filename = 'data/audio/traffic_audio.wav'
 # sampleRate, x=wav.read(filename)
 # # traffic: 0:573300
-# x = np.expand_dims(x[0:88200,1], axis = 1)
-# # x = np.expand_dims(x[0:573300,1], axis = 1)
 # # x = np.expand_dims(x[:,1], axis = 1)
-# # x = np.expand_dims(np.mean(x[0:573300,:], axis=1), axis = 1)
+# x = np.expand_dims(x[6129900:6570900,1], axis = 1)
 
-filename = 'data/audio/nara_audio.wav'
-sampleRate, x=wav.read(filename)
-# nara: 9238950:9327150
-# x = np.expand_dims(np.mean(x, axis=1), axis = 1)
-x = np.expand_dims(np.mean(x[9238950:9327150,:], axis=1), axis = 1)
-# x = np.expand_dims(x[:,1], axis = 1)
+# filename = 'data/audio/nara_audio.wav'
+# sampleRate, x=wav.read(filename)
+# # nara: 9238950:9327150
+# # x = np.expand_dims(x[:,1], axis = 1)
+# # x = np.expand_dims(x[9238950:9327150,1], axis=1)
+# x = np.expand_dims(x[9238950:9679950,1], axis=1)
 
 # filename = 'data/audio/watermelonman_audio.wav'
 # sampleRate, x=wav.read(filename)
-# # x = np.expand_dims(np.mean(x[20000:64100,:], axis=1), axis = 1)
-# # x = np.expand_dims(np.mean( x[2593080:2637180,:], axis=1), axis = 1)
-# x = np.expand_dims(np.mean( x[2593080:2681280,:], axis=1), axis = 1)
 # # x = np.expand_dims(x[:,1], axis = 1)
+# # x = np.expand_dims(x[2593080:2681280,1], axis=1)
+# x = np.expand_dims(x[2593080:3034080,1], axis=1)
 
 # filename = 'data/audio/soulfinger_audio.wav'
 # sampleRate, x=wav.read(filename)
-# x = np.expand_dims(x[:,0], axis = 1)
+# # x = np.expand_dims(x[:,0], axis = 1)
+# x = np.expand_dims(x[441000:882000,1], axis = 1)
 
-# filename = 'data/audio/fixingahole_audio.wav'
-# sampleRate, x=wav.read(filename)
-# x = np.expand_dims(np.mean(x[0:441000,:], axis=1), axis = 1)
-
-# filename = 'data/audio/smooth_audio.wav'
-# sampleRate, x=wav.read(filename)
-# # smooth: 176400:264600 9238950:9327150
-# # x = x[176400:264600,:]
-# x = np.expand_dims(np.mean(x[176400:264600,:], axis=1), axis = 1)
-
-# filename = 'data/audio/tomsdiner_audio.wav'
-# sampleRate, x=wav.read(filename)
-# # x = x[176400:264600,:]
-# x = np.expand_dims(np.mean(x[44100:136170,:], axis=1), axis = 1)
+filename = 'data/audio/tomsdiner_audio.wav'
+sampleRate, x=wav.read(filename)
+# x = x[176400:264600,1]
+x = np.expand_dims(x[44100:485100,1], axis=1)
 
 
 #%% 
@@ -89,19 +73,29 @@ x = x/32768
 # x = np.transpose(np.array([np.sin(2*np.pi*918.75*np.linspace(0,0.5,22051))]))
 # x = np.transpose(np.array([2*(0.5-np.random.uniform(size=22050))]))
 
+#%%
 
-#%% define bitrate
 """
-The bitrate is the quality control parameter of this coder. The number
-specifies the number of bits available to code one frame, representing
-384 input samples
+The following lines represent the encoding and decoding process, divided up
+into three parts of time-to-frequency mapping, bit allocation/quantizing and
+decoding (i.e. frequency-to-time mapping)
 """
+#%% calculate polyphase filterbank output
 
-layer = 2 # 1, 2  
-bitrate = 64
-smrModel = 'scf' #'psy' 'scf' 'spl' 'zero'
-Aweighting = True
+start = time.time()
 
+subSamples = mpeg.feedCoder(x)
+
+end = time.time()
+print("Subband samples calculated in\n %.2f"%(end - start),"seconds")
+
+
+#%% define bitrate and perceptual model
+
+layer = 1 # 1, 2  
+bitrate = 32
+smrModel = 'spl' #'psy' 'scf' 'spl' 'zero'
+Aweighting = False
 
 if layer==1:
     bpf = 384
@@ -131,20 +125,7 @@ print("Layer",layer,", bitrate",bitrate,"kbit/s or %.2f"%bps,"bps")
 print("SMR model:",smrModel,", Aweighting:",Aweighting,"\n")
 
 import mpegAudioFunctions as mpeg
-#%%
 
-"""
-The following lines represent the encoding and decoding process, divided up
-into three parts of time-to-frequency mapping, bit allocation/quantizing and
-decoding (i.e. frequency-to-time mapping)
-"""
-#%% calculate polyphase filterbank output
-start = time.time()
-
-subSamples = mpeg.feedCoder(x)
-
-end = time.time()
-print("Subband samples calculated in\n %.2f"%(end - start),"seconds")
 
 #%% Encoding
 
@@ -156,7 +137,7 @@ end = time.time()
 print("scaling, bit allocation and quantizing in\n %.2f"%(end - start),"seconds")
 
 
-#%% create matrix just for checking bit allocation
+# create matrix just for checking bit allocation
 nBitsAllocated = []
 scaleFactorInd = []
 quantSubbandSamples = np.zeros((len(transmitFrames)*frameLength,32))
@@ -242,7 +223,7 @@ compressionfactor = inputlength/codelength
 print("compression factor = %.2f"%compressionfactor,"")
 
 informationRate = nSampleBits/len(x)
-print("information rate = %.2f"%informationRate,"\n")
+print("information rate = %.2f"%informationRate,"i.e. coding bits per sample\n")
 
 # entropy estimate
 
@@ -319,9 +300,9 @@ if len(decodedSignal-481)>len(x):
 else:
     endDecode = -1
 
-axes[0, 0].set_title('time signal squared error')
-axes[0, 0].plot((x[0:endSource,0]-decodedSignal[481:endDecode])**2)
-axes[0, 0].grid(axis='x')
+# axes[0, 0].set_title('time signal squared error')
+# axes[0, 0].plot((x[0:endSource,0]-decodedSignal[481:endDecode])**2)
+# axes[0, 0].grid(axis='x')
 #
 axes[0, 1].set_title('spectral error (absolute difference, max-normalized)')
 axes[0, 1].plot(f,np.abs(Px-Py)/np.max(Px))

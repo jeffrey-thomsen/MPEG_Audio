@@ -8,8 +8,6 @@ import numpy as np
 
 import mpegAudioPsyAcMod as pam
 
-
-
 # to time stuff:
 #import time
 # start = time.time()
@@ -68,6 +66,7 @@ elif layer == 2:
     global sumNbal
     global maxBitsSubband
     nbal, quantLevels, sbLimit, sumNbal, maxBitsSubband = b2.B2Loader(sampleRate,bitrate)
+
 #%% Implementation of the Analysis Polyphase filterbank
 """
 The Analysis Filterbank uses a buffer which is fed with blocks of input audio
@@ -217,10 +216,8 @@ def calcScaleFactors(subbandSamples):
 
 #%% Bit allocation
 """
-The bit allocation actually takes into account the output of the psychoacoustic
-model, but instead I have implemented an equivalent with equivSMR.
-It takes a subbandFrame object, and through an iterative process it 
-assigns a number of coding bits to each subband
+The bit allocation takes a subbandFrame object, and through an iterative 
+process it assigns a number of coding bits to each subband
 """
 
 # compare MNRs of each subband and return first subband with lowest MNR
@@ -444,7 +441,6 @@ scalefactor of the band and applies the quantization according to the number of
  bits allocated to each band. The quantized subband samples are then wrapped 
 in a transmitFrame object together with the other input data, quasi 
 representing a block of the formatted bitstream.
-
 """
 class transmitFrame:
     def __init__(self,nSubbands=None,nBitsSubband=None,scalefactorInd=None,quantSubbandSamples=None,scfTransmissionPattern=None,scfSelectionInfo=None):
