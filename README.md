@@ -1,7 +1,7 @@
 # MPEG_Audio
 
 Project for the DTU course Data Compression and Image Communication. A Python implementation of an audio coder based on the MPEG-1 standard.
-Expanded upon by a special course with the title "Implementation and evaluation of perceptual audio coders."
+Expanded upon by a special course with the title "Implementation and Evaluation of Perceptual Audio Coders."
 
 # Introduction
 
